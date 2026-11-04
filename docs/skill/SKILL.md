@@ -1,6 +1,8 @@
 ---
 name: trading-data
 description: Author and wire derivation graphs with the `trading_data` Rust framework — writing `#[node]` cells, spelling `type Deps`, declaring `graph!`, and driving it off `Replay` or `Live`. Use whenever a crate depends on `trading_data`, or a task mentions its primitives — `#[node]`, `graph!`, `Cell`, `Buffering`/`Folding`/`Sampling`/`Gating`, `Scans`/`Closes`/`Folds`/`Runs`/`Symbolic`/`Decides`/`Blind`, `Lanes`, `ReadClock`, `Replay`/`Live`.
+metadata:
+  version: "0.1.0"
 ---
 
 # trading_data

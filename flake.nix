@@ -36,6 +36,7 @@
             };
           }];
           lfs = false;
+          skills = { };
         };
         readme = v_flakes.readme-fw {
           inherit pkgs pname;
