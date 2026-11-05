@@ -32,7 +32,7 @@ use trading_data::{
 use trading_data_spl::{
 	config::Config,
 	day_bounds, ensure_lanes,
-	nodes::{Atr, Batches, BookTop, BookTopSnap, Change, ChangeBack, Classify, Decision, Deprecator, Graph, Imbalance, Intent, Momentum, Spread, StdScreener, VolUsd},
+	nodes::{AtrPeriod, Batches, BookTop, BookTopSnap, Change, ChangeBack, Classify, Decision, Deprecator, Graph, Imbalance, Intent, Momentum, Spread, StdScreener, TrueRange, VolUsd},
 	symbol, trading_days,
 };
 use v_utils::*;
@@ -181,7 +181,8 @@ struct Direct {
 	oi: Ring<Oi>,
 	mc: Ring<Mc>,
 
-	atr: Atr<{ TF_1MIN }>,
+	true_range: TrueRange<{ TF_1MIN }>,
+	atr: trading_data::Wilder<TrueRange<{ TF_1MIN }>, AtrPeriod>,
 	momentum: Momentum<{ TF_5MIN }, 181>,
 	screener: StdScreener,
 	change_1d: ChangeBack<{ TF_1MIN }, { TF_1H }, { TF_1D }, { Timeframe(TF_1D.0 + TF_1H.0) }>,
@@ -199,6 +200,7 @@ struct Direct {
 	b_vol: [Vec<Volume>; 3],
 	b_bars: [Vec<Bar>; 3],
 	b_top: Vec<Option<BookTopSnap>>,
+	b_tr: Vec<Reading>,
 	b_atr: Vec<Reading>,
 	b_mom: Vec<Option<f64>>,
 	b_c1d: Vec<Reading>,
@@ -209,7 +211,7 @@ struct Direct {
 	b_spr: Vec<Reading>,
 	b_dep: Vec<Intent>,
 
-	/// The frame's carries over `Atr` / `Momentum`. Engine storage, so a replica of the graph owns
+	/// The frame's carries over ATR / `Momentum`. Engine storage, so a replica of the graph owns
 	/// them too — ungated, and so untouched by the commutation reset below.
 	l_atr: Option<f64>,
 	l_mom: Option<f64>,
@@ -263,8 +265,10 @@ impl Direct {
 		self.oi.push(oi);
 		self.mc.push(mc);
 
+		self.b_tr.clear();
+		Scan::emit(&mut self.true_range, (self.m1.hist::<Buffering<trading_data::Bars<{ TF_1MIN }>, Elems<2>>>(),), &mut self.b_tr);
 		self.b_atr.clear();
-		Fold::emit(&mut self.atr, (&self.b_bars[0],), &mut self.b_atr);
+		Fold::emit(&mut self.atr, (&self.b_tr,), &mut self.b_atr);
 		self.b_mom.clear();
 		self.momentum.emit((self.m5.hist::<Buffering<trading_data::Bars<{ TF_5MIN }>, Elems<181>>>(),), &mut self.b_mom);
 		if let Some(v) = self.b_atr.iter().rev().find_map(|x| x.get()) {

@@ -116,7 +116,7 @@ impl Episodic for Deprecator {
     fn arms<'t>(d: TriggerOut<'t, Self>) -> bool { d.is_some_and(|d| d.direction != Direction::Flat) }
 }
 // and the node itself gates on its own arm:
-type Deps = (Gating<Armed<Deprecator>>, Decision, Sampling<Atr<{ TF_1MIN }>>, BookTop);
+type Deps = (Gating<Armed<Deprecator>>, Decision, Sampling<Wilder<TrueRange<{ TF_1MIN }>, AtrPeriod>>, BookTop);
 ```
 
 The episode ends when the `Cut` out reports `Episode::terminal`; `graph!` commutates and resets every
