@@ -319,6 +319,12 @@ gateable the moment the lane became a run of rows the engine could retain for it
      Bars<TF>    (Ohlcs<TF>, Volumes<TF>)      bare deps    ⇒ publishes when its producers do
      an indie    Sampling<C> / Buffering<C,H>  retained     ⇒ the engine opens it once per period
 
+  A `Sampling<C>` of a faster C is read as C stands at the END of the opening tick, so it includes
+  C's elements past the period's close that landed in the same batch: what one period samples
+  depends on how the feed cut it. Kept, because aligning it means a timestamp search per read
+  (`Buffering` + `Hist::all`); the drift is bounded by the read clock. Revisit if that bound is
+  shown to move results.
+
   `clock_divides` (§1.7) is what keeps a declaration honest: every feeding rate must tile it. That
   also pins a period spelled twice — `Bars<TF>` names TF in its type and reads `Ohlcs<TF>`, so any
   CLOCK but `Some(TF)` fails to build. It is the check standing in for a type-level equality Rust
