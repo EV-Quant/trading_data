@@ -61,8 +61,6 @@ fn exports() -> BTreeSet<(String, String)> {
 	out
 }
 
-/// r[verify boundaries.facade.shim-pairing]
-///
 /// A cell is named in `outputs`/`Deps` by its type, and `graph!` answers by invoking the shim under
 /// the same path. Export one without the other and the graph fails on a macro nobody wrote.
 #[test]
@@ -151,8 +149,6 @@ fn mentions(ty: &Type, out: &mut Vec<String>) {
 	syn::visit::Visit::visit_type(&mut V(out), ty);
 }
 
-/// r[verify boundaries.facade.signature-closure]
-///
 /// What a client has to *spell* to call an exported item: an argument it constructs and a field it
 /// fills. `private_interfaces` says this within a crate; across the facade's re-export boundary
 /// nothing does, which is what holds `BatchTrades` in without an example naming it.

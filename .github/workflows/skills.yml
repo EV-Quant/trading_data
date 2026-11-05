@@ -30,15 +30,19 @@ jobs:
           key: nix-lean-${{ runner.os }}-${{ github.run_id }}
           path: /tmp/nix-lean-cache
           restore-keys: nix-lean-${{ runner.os }}-
+      - name: Build skargo
+        run: |
+          out=$(nix build --no-link --print-out-paths github:EV-Main/skills/f8eb644cc701656300bbb308f5ff0ead2c1d970a)
+          echo "skargo=$out/bin/skargo" >> "$GITHUB_ENV"
       - if: github.event_name != 'push'
         name: Check
-        run: nix run github:EV-Main/skills/f8eb644cc701656300bbb308f5ff0ead2c1d970a -- check
+        run: $skargo check
       - if: hashFiles('.claude-plugin/marketplace.json') != ''
         name: Validate Claude marketplace
         run: npx -y @anthropic-ai/claude-code plugin validate --strict .
       - if: github.event_name == 'push'
         name: Publish
-        run: nix run github:EV-Main/skills/f8eb644cc701656300bbb308f5ff0ead2c1d970a -- publish
+        run: $skargo publish
 name: Skills
 on:
   pull_request: {}
