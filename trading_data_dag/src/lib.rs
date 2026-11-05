@@ -2685,7 +2685,9 @@ where
 /// which is also how it says it is not warm yet.
 #[derive(Clone, Copy, Default)]
 pub struct Carried {
-	slots: [f64; MAX_SLOTS],
+	/// [`MAX_VARS`], not [`MAX_SLOTS`]: the state shares the env with the deps' elements, and that is
+	/// the only bound on it.
+	slots: [f64; MAX_VARS],
 }
 
 /// A run-shaped node computing one out element per element of its driving dep, carrying state
@@ -2731,7 +2733,7 @@ where
 	E::Item: Flat, {
 	let (base, carry, slots) = (<E::Deps as DepFlat>::LEN, <E as Folds>::STATE, <E::Item as Flat>::LEN);
 	assert!(base + carry <= MAX_VARS, "a Folds env outgrew MAX_VARS: raise it in trading_data_dag");
-	assert!(slots <= MAX_SLOTS && carry <= MAX_SLOTS, "a Folds item or state outgrew MAX_SLOTS: raise it in trading_data_dag");
+	assert!(slots <= MAX_SLOTS, "a Folds item outgrew MAX_SLOTS: raise it in trading_data_dag");
 	(base, carry, slots)
 }
 
@@ -2774,8 +2776,7 @@ impl Fold {
 				let env_w = env.width();
 				let cur = env.buf();
 				cur[base..base + carry].copy_from_slice(&c.slots[..carry]);
-				step.eval_slots(&cur[..env_w], &mut slots[..carry]);
-				c.slots[..carry].copy_from_slice(&slots[..carry]);
+				step.eval_slots(&cur[..env_w], &mut c.slots[..carry]);
 				cur[base..base + carry].copy_from_slice(&c.slots[..carry]);
 				value.eval_slots(&cur[..env_w], &mut slots[..slots_w]);
 				out.push(<E::Item as Unflat>::unflat(ts, &slots[..slots_w]));
@@ -2811,7 +2812,7 @@ where
 		let (base, carry, slots_w) = const { fold_widths::<E>() };
 		let dep_w = <E::Deps as DepFlat>::LEN;
 		let mut c = *e.carried();
-		let (mut buf, mut slots) = ([0.0f64; MAX_VARS], [0.0f64; MAX_SLOTS]);
+		let mut buf = [0.0f64; MAX_VARS];
 		let mut env = Env::<Blindfold>::new(&mut buf, base, carry);
 		let reads = <E::Deps as DepSet>::reads(&deps);
 		let (step, value) = (e.step(Vars), e.value(Vars));
@@ -2828,8 +2829,7 @@ where
 			cur[base..base + carry].copy_from_slice(&c.slots[..carry]);
 			let mut before = [0.0f64; MAX_VARS];
 			before.copy_from_slice(cur);
-			step.eval_slots(&cur[..env_w], &mut slots[..carry]);
-			c.slots[..carry].copy_from_slice(&slots[..carry]);
+			step.eval_slots(&cur[..env_w], &mut c.slots[..carry]);
 			cur[base..base + carry].copy_from_slice(&c.slots[..carry]);
 			let mut after = [0.0f64; MAX_VARS];
 			after.copy_from_slice(cur);
@@ -2840,7 +2840,7 @@ where
 		// the chain rule across the two bodies: the element reaches the out directly and through the
 		// state it just moved, and holding the *prior* state fixed is what makes the sum the one-step
 		// reading rather than the recurrence's full derivative.
-		let (mut ds, mut dv) = ([0.0f64; MAX_SLOTS * MAX_VARS], [0.0f64; MAX_SLOTS * MAX_VARS]);
+		let (mut ds, mut dv) = ([0.0f64; MAX_VARS * MAX_VARS], [0.0f64; MAX_SLOTS * MAX_VARS]);
 		step.grad_slots(&before[..env_w], &mut ds[..carry * env_w]);
 		value.grad_slots(&after[..env_w], &mut dv[..slots_w * env_w]);
 		let mut grad = [0.0f64; MAX_SLOTS * MAX_VARS];

@@ -2,16 +2,18 @@
 //! machines wired to a series. A strategy crate names these rather than re-deriving them; what it
 //! still owns is the wiring — which series, which lengths, which thresholds.
 //!
-//! Wilder semantics throughout: warmup = SMA over the first `period` samples, then
+//! The RSI chain is Wilder's: warmup = SMA over the first `period` samples, then
 //! `(prev*(n-1)+x)/n`; `None` until warm.
 #![feature(adt_const_params)]
 
 mod bar;
 mod rsi_node;
+mod zipf;
 
 pub use bar::{Bar, Bars, Ohlc, Ohlcs, Volume, Volumes, closed_by};
 pub use rsi_node::{AvgGain, AvgLoss, Rsi, RsiDelta, RsiSpec, RsiValues};
 use trading_data_dag::{Ex, Expr, constant, lt, min, select};
+pub use zipf::{Zipf, ZipfSpec};
 
 /// Wilder's running mean, as the two expressions a [`trading_data_dag::Folds`] body steps its state
 /// by: what the mean becomes, and how many samples have gone into it. Warmup is an SMA over the

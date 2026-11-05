@@ -97,6 +97,8 @@ trading_data_derivatives::RsiSpec
 trading_data_derivatives::RsiValues
 trading_data_derivatives::Volume
 trading_data_derivatives::Volumes
+trading_data_derivatives::Zipf
+trading_data_derivatives::ZipfSpec
 trading_data_derivatives::__td_node_AvgGain
 trading_data_derivatives::__td_node_AvgLoss
 trading_data_derivatives::__td_node_Bars
@@ -104,6 +106,7 @@ trading_data_derivatives::__td_node_Ohlcs
 trading_data_derivatives::__td_node_Rsi
 trading_data_derivatives::__td_node_RsiDelta
 trading_data_derivatives::__td_node_Volumes
+trading_data_derivatives::__td_node_Zipf
 trading_data_derivatives::closed_by
 trading_data_derivatives::rsi
 trading_data_derivatives::wilder

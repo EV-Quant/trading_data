@@ -14,7 +14,7 @@
 //! [`Expr`] impl, the [`Ast`] variant and every mechanical walk over it from one row per operator,
 //! so `Expr::eval` and `Ast::eval` cannot say different things about the same operator. What a row
 //! cannot state — [`Ast::diff`]'s per-operator mathematics and [`Ast::simplify`]'s per-operator
-//! identities — is written out below it, and the operators no row fits ([`Const`], [`Var`],
+//! identities — is written out below it, and the operators no row fits ([`Const`], [`Var`], [`VarAt`],
 //! [`Powi`], [`Select`], [`Sum`], [`Absent`], [`Or`]) are declared beside the table as the
 //! exceptions they are.
 #![no_std]
@@ -447,6 +447,10 @@ ops! {
 /// Zero-size leaf reading `env[I]`; `I` is the dep slot it stands for.
 #[derive(Clone, Copy)]
 pub struct Var<const I: usize>;
+/// [`Var`] with the slot as a value, so `N` slots read alike are one type and fit a [`Sum`] or an
+/// array of [`Slots`].
+#[derive(Clone, Copy)]
+pub struct VarAt(pub usize);
 /// The only `f64` entry point into the algebra.
 #[derive(Clone, Copy)]
 pub struct Const(pub f64);
@@ -483,6 +487,21 @@ impl<const I: usize> Expr for Var<I> {
 
 	fn lower(&self) -> Ast {
 		Ast::Var(I)
+	}
+}
+
+impl Expr for VarAt {
+	fn eval(&self, env: &[f64]) -> f64 {
+		env[self.0]
+	}
+
+	fn grad(&self, env: &[f64], seed: f64, grad: &mut [f64]) -> f64 {
+		grad[self.0] += seed;
+		env[self.0]
+	}
+
+	fn lower(&self) -> Ast {
+		Ast::Var(self.0)
 	}
 }
 
@@ -646,31 +665,65 @@ impl<T: Expr> Slots for Ex<T> {
 	}
 }
 
+/// Over [`Slots`] rather than [`Ex`], so a recurrence whose state is a few named slots and a run
+/// of alike ones states it as one tuple.
 macro_rules! slots_tuple {
-	($n:expr; $($T:ident $i:tt),+) => {
-		impl<$($T: Expr),+> Slots for ($(Ex<$T>,)+) {
-			const LEN: usize = $n;
+	($($T:ident $i:tt),+) => {
+		impl<$($T: Slots),+> Slots for ($($T,)+) {
+			const LEN: usize = 0 $(+ $T::LEN)+;
 			const MAYBE: bool = $($T::MAYBE)|+;
 
 			fn eval_slots(&self, env: &[f64], out: &mut [f64]) {
-				$(out[$i] = self.$i.eval(env);)+
+				let mut at = 0;
+				$(
+					self.$i.eval_slots(env, &mut out[at..at + $T::LEN]);
+					at += $T::LEN;
+				)+
+				debug_assert_eq!(at, Self::LEN);
 			}
 
 			fn grad_slots(&self, env: &[f64], jac: &mut [f64]) {
-				let w = env.len();
-				$(self.$i.grad(env, 1.0, &mut jac[$i * w..($i + 1) * w]);)+
+				let (w, mut at) = (env.len(), 0);
+				$(
+					self.$i.grad_slots(env, &mut jac[at * w..(at + $T::LEN) * w]);
+					at += $T::LEN;
+				)+
+				debug_assert_eq!(at, Self::LEN);
 			}
 
 			fn lower_slots(&self) -> Vec<Ast> {
-				alloc::vec![$(self.$i.lower()),+]
+				let mut out = Vec::with_capacity(Self::LEN);
+				$(out.extend(self.$i.lower_slots());)+
+				out
 			}
 		}
 	};
 }
-slots_tuple!(2; A 0, B 1);
-slots_tuple!(3; A 0, B 1, C 2);
-slots_tuple!(4; A 0, B 1, C 2, D 3);
-slots_tuple!(5; A 0, B 1, C 2, D 3, E 4);
+slots_tuple!(A 0, B 1);
+slots_tuple!(A 0, B 1, C 2);
+slots_tuple!(A 0, B 1, C 2, D 3);
+slots_tuple!(A 0, B 1, C 2, D 3, E 4);
+
+impl<S: Slots, const N: usize> Slots for [S; N] {
+	const LEN: usize = N * S::LEN;
+	const MAYBE: bool = S::MAYBE;
+
+	fn eval_slots(&self, env: &[f64], out: &mut [f64]) {
+		for (k, s) in self.iter().enumerate() {
+			s.eval_slots(env, &mut out[k * S::LEN..(k + 1) * S::LEN]);
+		}
+	}
+
+	fn grad_slots(&self, env: &[f64], jac: &mut [f64]) {
+		for (s, jac) in self.iter().zip(jac.chunks_exact_mut(S::LEN * env.len())) {
+			s.grad_slots(env, jac);
+		}
+	}
+
+	fn lower_slots(&self) -> Vec<Ast> {
+		self.iter().flat_map(Slots::lower_slots).collect()
+	}
+}
 
 /// Operator-ergonomics handle: `x*y + constant(2.0)` builds the nested type. Delegates every
 /// [`Expr`] method to its inner primitive.
@@ -700,6 +753,10 @@ pub struct Vars;
 impl Vars {
 	pub fn get<const I: usize>(self) -> Ex<Var<I>> {
 		Ex(Var)
+	}
+
+	pub fn at(self, i: usize) -> Ex<VarAt> {
+		Ex(VarAt(i))
 	}
 }
 

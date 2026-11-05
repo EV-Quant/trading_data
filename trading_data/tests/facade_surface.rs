@@ -12,13 +12,13 @@ use syn::{ImplItem, Item, Type, UseTree, Visibility};
 // the compile-time half of the shim pairing: an unpaired name here is an unresolved import.
 #[expect(unused_imports, reason = "naming both halves of each pair is what this asserts")]
 use trading_data::{
-	__td_node_AvgGain, __td_node_AvgLoss, __td_node_Bars, __td_node_Book, __td_node_Ohlcs, __td_node_Rsi, __td_node_RsiDelta, __td_node_Volumes, AvgGain, AvgLoss, Bars, Book, Ohlcs, Rsi,
-	RsiDelta, Volumes,
+	__td_node_AvgGain, __td_node_AvgLoss, __td_node_Bars, __td_node_Book, __td_node_Ohlcs, __td_node_Rsi, __td_node_RsiDelta, __td_node_Volumes, __td_node_Zipf, AvgGain, AvgLoss, Bars,
+	Book, Ohlcs, Rsi, RsiDelta, Volumes, Zipf,
 };
 
 /// The same pairs as data, checked against the facade below — so a pair added there cannot skip the
 /// import that proves it has both halves.
-const PAIRED: [&str; 8] = ["AvgGain", "AvgLoss", "Bars", "Book", "Ohlcs", "Rsi", "RsiDelta", "Volumes"];
+const PAIRED: [&str; 9] = ["AvgGain", "AvgLoss", "Bars", "Book", "Ohlcs", "Rsi", "RsiDelta", "Volumes", "Zipf"];
 
 fn root() -> PathBuf {
 	Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
