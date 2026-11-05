@@ -79,14 +79,13 @@ pub struct Indies {
 	pub momentum: Momentum,
 	pub atr: Atr,
 }
-/// `Display` is the indie's signature — `rsi:t5m:b14:s14` — so anything naming this indie names the
+/// `Display` is the indie's signature — `rsi:t5m:l14` — so anything naming this indie names the
 /// timeframe with it. There is no default: the timeframe RSI runs on is the strategy.
 #[derive(Clone, CompactFormatNamed, Copy, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rsi {
 	pub timeframe: Timeframe,
-	pub base_len: usize,
-	pub smooth_len: usize,
+	pub len: usize,
 }
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

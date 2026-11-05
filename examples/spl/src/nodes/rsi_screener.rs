@@ -18,7 +18,12 @@ impl Blind for RsiScreener {
 	type Deps = (
 		trading_data::Bars<{ TF_1MIN }>,
 		ChangeBack<{ TF_1MIN }, { TF_1H }, { TF_1D }, { Timeframe(TF_1D.0 + TF_1H.0) }>,
-		Sampling<trading_data::Rsi<trading_data::Bars<{ TF_5MIN }>, Knobs>>,
+		Sampling<
+			trading_data::Rsi<
+				trading_data::Wilder<trading_data::Gains<trading_data::RsiDelta<trading_data::Bars<{ TF_5MIN }>>>, Knobs>,
+				trading_data::Wilder<trading_data::Losses<trading_data::RsiDelta<trading_data::Bars<{ TF_5MIN }>>>, Knobs>,
+			>,
+		>,
 	);
 
 	const WHY: &'static str = "`Decides` reads a non-leading dep at its last element, and this asks whether *any* day-change in the whole run cleared the threshold — a quantifier no \
@@ -30,7 +35,7 @@ impl Blind for RsiScreener {
 			panic!("the graph is wired for RsiScreener; config.nix names {:?}", strategy().screen)
 		};
 		let Some(rsi) = rsi else { return false };
-		rsi.actual.get().expect("`Present` says both legs are warm") > c.rsi_threshold && change_1d.iter().filter_map(|r| r.get()).any(|change| change > *c.price_percent)
+		rsi > c.rsi_threshold && change_1d.iter().filter_map(|r| r.get()).any(|change| change > *c.price_percent)
 	}
 }
 impl Gate for RsiScreener {}

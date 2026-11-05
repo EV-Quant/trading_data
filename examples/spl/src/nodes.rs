@@ -88,7 +88,7 @@ mod std_screener;
 #[macro_use]
 mod vol_usd;
 
-pub use atr::Atr;
+pub use atr::{AtrPeriod, TrueRange};
 pub use book_top::{BookTop, BookTopSnap};
 pub use change::Change;
 pub use change_back::ChangeBack;
@@ -101,8 +101,8 @@ pub use rsi::Knobs;
 pub use rsi_screener::RsiScreener;
 pub use spread::Spread;
 pub use std_screener::StdScreener;
+pub use trading_data::Bar;
 use trading_data::{Armed, BookAnchors, BookDelta, BookDeltas, BookShape, Elems, Lanes, Mc, McRoot, Oi, OiRoot, Over, TradeCols, Trades};
-pub use trading_data::{Bar, RsiValues};
 // a `type Deps` const expression is re-expanded here, so the `TF_*` a dep names has to resolve here too.
 use v_utils::*;
 pub use vol_usd::VolUsd;
@@ -119,7 +119,7 @@ trading_data::graph! {
 	batches Batches;
 	roots { trades: Trades[TradeCols], deltas: BookDeltas[BookDelta], anchors: BookAnchors[BookShape], oi: OiRoot[Oi], mc: McRoot[Mc] };
 	out TickOut;
-	outputs { bar: trading_data::Bars<{ TF_1MIN }>, deprecator: Deprecator, rsi: trading_data::Rsi<trading_data::Bars<{ TF_5MIN }>, Knobs> }
+	outputs { bar: trading_data::Bars<{ TF_1MIN }>, deprecator: Deprecator, rsi: trading_data::Rsi<trading_data::Wilder<trading_data::Gains<trading_data::RsiDelta<trading_data::Bars<{ TF_5MIN }>>>, Knobs>, trading_data::Wilder<trading_data::Losses<trading_data::RsiDelta<trading_data::Bars<{ TF_5MIN }>>>, Knobs>> }
 }
 
 // r[impl kernels.fidelity.stated]

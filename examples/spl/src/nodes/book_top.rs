@@ -29,7 +29,7 @@ impl Glance for BookTopSnap {
 }
 
 /// Best bid/ask and top-20 depth off the folded book — a derived fact, peer to [`Rsi`](trading_data::Rsi) or
-/// [`super::Atr`], and the delta lane's own cadence is the rate. A book still filling from its first
+/// ATR, and the delta lane's own cadence is the rate. A book still filling from its first
 /// deltas has one side empty; that is warmup, not corruption, so the tick declines and the
 /// deprecator simply doesn't enter yet.
 #[derive(Clone, Default)]

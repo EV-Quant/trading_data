@@ -1,6 +1,6 @@
 ---
 source: trading_data/tests/facade_surface.rs
-assertion_line: 234
+assertion_line: 230
 expression: "exports().iter().map(|(c, n)|\nformat!(\"{c}::{n}\")).collect::<Vec<_>>().join(\"\\n\")"
 ---
 trading_data_core::Asset
@@ -85,31 +85,32 @@ trading_data_dag::node
 trading_data_dag::node_alias
 trading_data_dag::slice_nudge
 trading_data_dag::value_nudge
-trading_data_derivatives::AvgGain
-trading_data_derivatives::AvgLoss
 trading_data_derivatives::Bar
 trading_data_derivatives::Bars
+trading_data_derivatives::Ema
+trading_data_derivatives::Gains
+trading_data_derivatives::Length
+trading_data_derivatives::Losses
 trading_data_derivatives::Ohlc
 trading_data_derivatives::Ohlcs
 trading_data_derivatives::Rsi
 trading_data_derivatives::RsiDelta
-trading_data_derivatives::RsiSpec
-trading_data_derivatives::RsiValues
 trading_data_derivatives::Volume
 trading_data_derivatives::Volumes
+trading_data_derivatives::Wilder
 trading_data_derivatives::Zipf
 trading_data_derivatives::ZipfSpec
-trading_data_derivatives::__td_node_AvgGain
-trading_data_derivatives::__td_node_AvgLoss
 trading_data_derivatives::__td_node_Bars
+trading_data_derivatives::__td_node_Ema
+trading_data_derivatives::__td_node_Gains
+trading_data_derivatives::__td_node_Losses
 trading_data_derivatives::__td_node_Ohlcs
 trading_data_derivatives::__td_node_Rsi
 trading_data_derivatives::__td_node_RsiDelta
 trading_data_derivatives::__td_node_Volumes
+trading_data_derivatives::__td_node_Wilder
 trading_data_derivatives::__td_node_Zipf
 trading_data_derivatives::closed_by
-trading_data_derivatives::rsi
-trading_data_derivatives::wilder
 trading_data_expr::Ex
 trading_data_expr::Expr
 trading_data_expr::Slots

@@ -9,7 +9,7 @@ trading_data::graph! {
     roots { trades: Trades[TradeCols], deltas: BookDeltas[BookDelta], anchors: BookAnchors[BookShape],
             oi: OiRoot[Oi], mc: McRoot[Mc] };
     out TickOut;
-    outputs { bar: Bars<{ TF_1MIN }>, deprecator: Deprecator, rsi: Rsi<Bars<{ TF_5MIN }>, Knobs> }
+    outputs { bar: Bars<{ TF_1MIN }>, deprecator: Deprecator, rsi: Rsi<Wilder<Gains<RsiDelta<Bars<{ TF_5MIN }>>>, Knobs>, Wilder<Losses<RsiDelta<Bars<{ TF_5MIN }>>>, Knobs>> }
 }
 ```
 

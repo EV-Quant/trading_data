@@ -4,7 +4,7 @@ use trading_data::{Armed, Cell, DepOuts, Direction, Episode, Episodic, Flat, Gat
 use v_utils::*;
 
 use super::{
-	atr::Atr,
+	atr::{AtrPeriod, TrueRange},
 	book_top::BookTop,
 	decision::{Decided, Decision},
 };
@@ -175,7 +175,7 @@ impl Runs for Deprecator {
 	/// The ATR is sampled rather than cached here: it measures the market, not the episode, so the
 	/// commutation reset below has no business dropping it — a new episode enters on the envelope
 	/// standing now, not on a re-warm.
-	type Deps = (Gating<Armed<Deprecator>>, Decision, Sampling<Atr<{ TF_1MIN }>>, BookTop);
+	type Deps = (Gating<Armed<Deprecator>>, Decision, Sampling<trading_data::Wilder<TrueRange<{ TF_1MIN }>, AtrPeriod>>, BookTop);
 
 	const PLOTS: &'static [Plot] = &[
 		Plot {

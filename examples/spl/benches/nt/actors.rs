@@ -2,7 +2,7 @@
 //! hop between them a JSON `Signal` on the msgbus — the shape scam_pump_liqs runs.
 //!
 //! The DAG has ticks; an actor system has events, and that is the whole of the difference being
-//! measured. Each node here fires on the event its `Deps` are clocked by — [`Atr`] on a 1m close,
+//! measured. Each node here fires on the event its `Deps` are clocked by — ATR on a 1m close,
 //! [`Momentum`] on a 5m close, [`Imbalance`]/[`Spread`] on a book delta, [`Deprecator`] on a book
 //! read — which is the same dependency order the graph steps in, minus the tick that synchronises
 //! them. Where that costs fidelity it is listed in the bench's `notes`, not hidden.
@@ -32,7 +32,7 @@ use trading_data::{
 };
 use trading_data_spl::{
 	DEPTH,
-	nodes::{Atr, BookTopSnap, Change, ChangeBack, Classified, Classify, Decided, Decision, Deprecator, Imbalance, Intent, Momentum, Spread, StdScreener, VolUsd},
+	nodes::{AtrPeriod, BookTopSnap, Change, ChangeBack, Classified, Classify, Decided, Decision, Deprecator, Imbalance, Intent, Momentum, Spread, StdScreener, TrueRange, VolUsd},
 };
 use v_utils::*;
 
@@ -321,7 +321,7 @@ impl DataActor for Book {
 
 // --- ungated derivations -----------------------------------------------------------------------
 
-actor!(Atrs { node: Atr<{ TF_1MIN }>, out: Vec<Reading> });
+actor!(Atrs { true_range: TrueRange<{ TF_1MIN }>, node: trading_data::Wilder<TrueRange<{ TF_1MIN }>, AtrPeriod>, m1: Ring<Bar>, tr: Vec<Reading>, out: Vec<Reading> });
 
 impl DataActor for Atrs {
 	fn on_start(&mut self) -> anyhow::Result<()> {
@@ -330,9 +330,11 @@ impl DataActor for Atrs {
 	}
 
 	fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
-		let bar = [Bar::from(decode::<BarDto>(signal))];
+		self.m1.push(&[Bar::from(decode::<BarDto>(signal))]);
+		self.tr.clear();
+		Scan::emit(&mut self.true_range, (self.m1.hist::<Buffering<trading_data::Bars<{ TF_1MIN }>, Elems<2>>>(),), &mut self.tr);
 		self.out.clear();
-		Fold::emit(&mut self.node, (&bar,), &mut self.out);
+		Fold::emit(&mut self.node, (&self.tr,), &mut self.out);
 		self.publish_signal(ATR, encode(&wire(&self.out)), signal.ts_event);
 		Ok(())
 	}
@@ -642,7 +644,7 @@ impl DataActor for Deprecate {
 
 	fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
 		match signal.name.as_str() {
-			// the frame's carry over `Atr`: a level, and ungated, so neither a read nor the commutation
+			// the frame's carry over ATR: a level, and ungated, so neither a read nor the commutation
 			// below clears it.
 			ATR => {
 				if let Some(v) = unwire(signal).iter().rev().find_map(|x| x.get()) {
