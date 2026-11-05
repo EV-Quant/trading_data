@@ -1,7 +1,7 @@
 use core::{array, marker::PhantomData};
 
 use trading_data_dag::{
-	Carried, Cell, DepReads, Env, Folding, Folds, Nudge, Present, Reading, Series, Slots, Tag, Unbounded, Vars, Witness, constant, lt, min, node, select, slice_nudge, sum,
+	Carried, Cell, DepReads, Env, Folding, Folds, Nudge, Present, Reading, Series, Slots, Tag, Unbounded, Vars, Witness, absent, constant, lt, min, node, select, slice_nudge, sum,
 };
 
 /// The exponent of a [`Zipf`] — a number an app reading it from a config file has no const to give.
@@ -11,6 +11,9 @@ pub trait ZipfSpec: 'static {
 
 	/// `s` in `(k+1)^-s`. The weights total `ζ(s)`, which is finite only past 1.
 	fn exponent() -> f64;
+
+	/// Samples to see before publishing; `0` publishes from the first.
+	fn warmup() -> usize;
 }
 
 /// Mean of `X` under weight `(k+1)^-s` on the sample `k` back, normalised by the weight the history
@@ -25,11 +28,12 @@ pub struct Zipf<X, S, const N: usize> {
 	/// `(N+1)^-s`: what a sample leaving the head enters the tail at.
 	entry: f64,
 	decay: f64,
+	warmup: usize,
 	_wiring: PhantomData<(X, S)>,
 }
 
-/// Env layout: the sample, then the state — how many head slots hold a sample, the tail's weighted
-/// sum and its weight, and the head itself, newest first.
+/// Env layout: the sample, then the state — samples seen (saturating once both the head and the
+/// warmup are full), the tail's weighted sum and its weight, and the head itself, newest first.
 const COUNT: usize = 1;
 const RING: usize = 4;
 
@@ -40,6 +44,7 @@ impl<X, S, const N: usize> Clone for Zipf<X, S, N> {
 			head: self.head,
 			entry: self.entry,
 			decay: self.decay,
+			warmup: self.warmup,
 			_wiring: PhantomData,
 		}
 	}
@@ -55,6 +60,7 @@ impl<X, S: ZipfSpec, const N: usize> Default for Zipf<X, S, N> {
 			head: array::from_fn(|k| ((k + 1) as f64).powf(-s)),
 			entry,
 			decay: 1.0 - entry / zeta_tail(s, N),
+			warmup: S::warmup(),
 			_wiring: PhantomData,
 		}
 	}
@@ -86,7 +92,7 @@ impl<X: Series<Item = Reading> + Nudge, S: ZipfSpec, const N: usize> Folds for Z
 		// counts are whole, so this is `count >= N`: only then is the head's last slot a sample.
 		let full = lt(constant(N as f64 - 1.0), count);
 		(
-			min(count + constant(1.0), constant(N as f64)),
+			min(count + constant(1.0), constant(N.max(self.warmup) as f64)),
 			constant(self.decay) * tail + constant(self.entry) * v.at(RING + N - 1),
 			constant(self.decay) * mass + select(full, constant(self.entry), constant(0.0)),
 			array::from_fn::<_, N, _>(|k| v.at(if k == 0 { 0 } else { RING + k - 1 })),
@@ -97,7 +103,7 @@ impl<X: Series<Item = Reading> + Nudge, S: ZipfSpec, const N: usize> Folds for Z
 		let count = v.get::<1>();
 		let num = sum(array::from_fn::<_, N, _>(|k| constant(self.head[k]) * v.at(RING + k))) + v.get::<2>();
 		let den = sum(array::from_fn::<_, N, _>(|k| select(lt(constant(k as f64), count), constant(self.head[k]), constant(0.0)))) + v.get::<3>();
-		num / den
+		select(lt(count, constant(self.warmup as f64)), absent(), num / den)
 	}
 
 	fn carried(&self) -> &Carried {

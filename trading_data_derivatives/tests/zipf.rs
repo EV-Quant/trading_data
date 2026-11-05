@@ -23,28 +23,52 @@ impl ZipfSpec for Basel {
 	fn exponent() -> f64 {
 		2.0
 	}
+
+	fn warmup() -> usize {
+		0
+	}
+}
+
+/// [`Basel`] held back past the head, so the warmup is not the head filling under another name.
+struct Warm;
+impl ZipfSpec for Warm {
+	const NAME: &'static str = "2/6";
+
+	fn exponent() -> f64 {
+		2.0
+	}
+
+	fn warmup() -> usize {
+		WARMUP
+	}
 }
 
 const HEAD: usize = 4;
+const WARMUP: usize = 6;
 
 graph! {
 	struct G;
 	batches Batches;
 	roots { xs: Xs[Reading] };
 	out GOut;
-	outputs { z: Zipf<Xs, Basel, 4> }
+	outputs { z: Zipf<Xs, Basel, 4>, warm: Zipf<Xs, Warm, 4> }
 }
 
-/// One sample per tick, `None` standing for an absent one.
-fn drive(xs: &[Option<f64>]) -> Vec<Option<f64>> {
+/// One sample per tick, `None` standing for an absent one; the plain average's run and the warmed one's.
+fn runs(xs: &[Option<f64>]) -> (Vec<Option<f64>>, Vec<Option<f64>>) {
 	let mut g = G::default();
-	let mut out = Vec::new();
+	let (mut z, mut warm) = (Vec::new(), Vec::new());
 	for x in xs {
 		let x = x.map_or(Reading::ABSENT, Reading::from);
 		let o = g.tick(0, Batches { xs: core::slice::from_ref(&x) });
-		out.extend(o.z.iter().map(|v| v.present()));
+		z.extend(o.z.iter().map(|v| v.present()));
+		warm.extend(o.warm.iter().map(|v| v.present()));
 	}
-	out
+	(z, warm)
+}
+
+fn drive(xs: &[Option<f64>]) -> Vec<Option<f64>> {
+	runs(xs).0
 }
 
 fn close(got: f64, want: f64, tol: f64) {
@@ -84,4 +108,13 @@ fn an_absent_sample_neither_enters_nor_ages_the_average() {
 	let without = drive(&[Some(1.0), Some(2.0), Some(5.0), Some(-3.0), Some(4.0), Some(0.5)]);
 	assert_eq!(with[1], None);
 	assert_eq!(with.last(), without.last());
+}
+
+/// A warmup only withholds: once warm, the value is the one an unwarmed average holds.
+#[test]
+fn a_warmup_withholds_exactly_its_samples_and_changes_nothing_after() {
+	let xs: Vec<_> = (0..20).map(|i| Some((i as f64 * 0.9).sin())).collect();
+	let (z, warm) = runs(&xs);
+	assert!(warm[..WARMUP - 1].iter().all(Option::is_none), "{warm:?}");
+	assert_eq!(warm[WARMUP - 1..], z[WARMUP - 1..]);
 }
