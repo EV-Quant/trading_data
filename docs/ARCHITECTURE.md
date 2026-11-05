@@ -28,8 +28,8 @@ Two sentences hold up everything below, and each sub-crate is one of them made m
 trading_data_expr           #![no_std], one dep (libm) — the primitive algebra: one expression, four readings
                             (eval / exact grad / LaTeX / value-annotated trace)
 trading_data_dag            core + alloc in its own source — domain-free derivation engine
-trading_data_derivatives    the fundamental primitives: indicator state machines, and the bar/RSI nodes that are
-                            nothing but those machines wired to a series — every strategy names these
+trading_data_derivatives    the fundamental primitives: bars, smoothers over any series (Wilder, EMA, Zipf), and the
+                            pieces an indicator is wired from (RSI's delta, gains, losses, ratio) — every strategy names these
 trading_data_core           the shared parse boundary both exchange_interactions and persistence see: BatchTrades, the raw
                             columnar lane holders, the Book fold + ShadowBook, and (orphan rules) their dag impls
 trading_data_persistence    arrow/parquet — catalog, lanes, feather writer, and `sync`: the central replay/live weaver

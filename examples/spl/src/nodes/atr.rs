@@ -1,61 +1,44 @@
-use trading_data::{
-	Carried, Cell, DepReads, Env, Folding, Folds, Reading, Slots, Stamped, Tag, Timeframe, Unbounded, Vars, Witness, abs, absent, constant, lt, max, node, select, slice_nudge, wilder,
-};
+use trading_data::{Bar, Bars, Buffering, Cell, DepReads, Elems, Env, Length, Reading, Scans, Slots, Stamped, Tag, Timeframe, Vars, Witness, abs, max, node, slice_nudge};
 
 use crate::config::strategy;
 
-/// Wilder ATR on `TF` bars, over the period `indies.atr.period` names. An indie in its own right
-/// rather than an execution-owned indicator: that is what removed SPL's per-situation bar
-/// subscribe/unsubscribe flicker.
+/// The bar's range, widened to the previous close where the price gapped past it.
 #[derive(Clone, Default)]
-pub struct Atr<const TF: Timeframe>(Carried);
-impl<const TF: Timeframe> Atr<TF> {
-	const TAG: Tag = Tag::new("Atr:", TF);
+pub struct TrueRange<const TF: Timeframe>;
+impl<const TF: Timeframe> TrueRange<TF> {
+	const TAG: Tag = Tag::new("TrueRange:", TF);
 }
-impl<const TF: Timeframe> Cell for Atr<TF> {
+impl<const TF: Timeframe> Cell for TrueRange<TF> {
 	type Out<'t> = &'t [Reading];
 
 	const NAME: &'static str = Self::TAG.as_str();
 }
 #[node]
-impl<const TF: Timeframe> Folds for Atr<TF> {
-	/// A Wilder recurrence reaches to the start of the run.
-	type Deps = (Folding<trading_data::Bars<TF>, Unbounded>,);
-
-	/// The previous close, then Wilder's own two: the running mean and how many samples have gone
-	/// into it. `warmed == 0` is what stands in for "no previous close", so nothing here needs a
-	/// zero that is not zero.
-	const STATE: usize = 3;
+impl<const TF: Timeframe> Scans for TrueRange<TF> {
+	type Deps = (Buffering<Bars<TF>, Elems<2>>,);
 
 	fn read<W: Witness>((bars,): DepReads<'_, Self>, i: usize, env: &mut Env<'_, W>) -> Option<i64> {
 		let b = bars.at(i)?;
 		env.put(b);
+		// the first bar has no previous close; its own close lies inside its range, so standing in for
+		// one leaves the true range the range.
+		env.put(bars.lagged_at(i, 1).unwrap_or(b).slot(Bar::CLOSE));
 		Some(b.ts_ns())
 	}
 
-	fn step(&self, v: Vars) -> impl Slots {
-		let (high, low, close) = (v.get::<1>(), v.get::<2>(), v.get::<3>());
-		let (prev, value, warmed) = (v.get::<5>(), v.get::<6>(), v.get::<7>());
-		let range = high - low;
-		// the first bar has no previous close, and a true range against a close that never happened
-		// is not a smaller number, it is a different quantity.
-		let tr = select(lt(warmed, constant(1.0)), range, max(max(range, abs(high - prev)), abs(low - prev)));
-		let n = strategy().indies.atr.period as f64;
-		let (next, warmed) = wilder(value, warmed, tr, n);
-		(close, next, warmed)
-	}
-
-	fn value(&self, v: Vars) -> impl Slots {
-		let n = strategy().indies.atr.period as f64;
-		select(lt(v.get::<7>(), constant(n)), absent(), v.get::<6>())
-	}
-
-	fn carried(&self) -> &Carried {
-		&self.0
-	}
-
-	fn carried_mut(&mut self) -> &mut Carried {
-		&mut self.0
+	fn body(&self, v: Vars) -> impl Slots {
+		let (high, low, prev) = (v.get::<1>(), v.get::<2>(), v.get::<5>());
+		max(max(high - low, abs(high - prev)), abs(low - prev))
 	}
 }
-slice_nudge!([const TF: Timeframe] Atr<TF>, Reading);
+slice_nudge!([const TF: Timeframe] TrueRange<TF>, Reading);
+
+/// `indies.atr.period`: the length of the Wilder average over [`TrueRange`] that is ATR.
+pub struct AtrPeriod;
+impl Length for AtrPeriod {
+	const NAME: &'static str = "AtrPeriod";
+
+	fn len() -> usize {
+		strategy().indies.atr.period
+	}
+}

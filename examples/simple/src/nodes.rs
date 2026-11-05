@@ -6,7 +6,7 @@
 use core::fmt;
 
 use trading_data::{
-	Buffering, Bump, Carried, Cell, Closes, DepOuts, DepReads, Elems, Env, Expr, Flat, Folding, Folds, Glance, Horizon, Lanes, Over, Pending, Reading, RsiSpec, Runs, Sampling, Side, Slots,
+	Buffering, Bump, Carried, Cell, Closes, DepOuts, DepReads, Elems, Env, Expr, Flat, Folding, Folds, Glance, Horizon, Lanes, Length, Over, Pending, Reading, Runs, Sampling, Side, Slots,
 	Stamped, Symbolic, Tag, Timeframe, TradeCols, Trades, Unflat, Vars, Witness, always_present, constant, node, slice_nudge,
 };
 use v_utils::*;
@@ -22,16 +22,12 @@ const _: () = {
 		"a kernel here computes with no algebra at all where the graph pins fewer: print `Graph::FIDELITY`, then raise this number in a diff carrying the node's `WHY`"
 	);
 };
-/// Wilder's own lengths, and the whole of what this graph configures.
+/// Wilder's own length, and the whole of what this graph configures.
 pub struct Len14;
-impl RsiSpec for Len14 {
+impl Length for Len14 {
 	const NAME: &'static str = "Len14";
 
-	fn base_len() -> usize {
-		14
-	}
-
-	fn smooth_len() -> usize {
+	fn len() -> usize {
 		14
 	}
 }
@@ -267,7 +263,7 @@ trading_data::graph! {
 	out TickOut;
 	// `main.rs` reads every one of these: the day-end levels, and `Signal` through the exact/FD witness.
 	outputs {
-		rsi: trading_data::Rsi<trading_data::Bars<{ TF_1MIN }>, Len14>,
+		rsi: trading_data::Rsi<trading_data::Wilder<trading_data::Gains<trading_data::RsiDelta<trading_data::Bars<{ TF_1MIN }>>>, Len14>, trading_data::Wilder<trading_data::Losses<trading_data::RsiDelta<trading_data::Bars<{ TF_1MIN }>>>, Len14>>,
 		bar: trading_data::Bars<{ TF_1MIN }>,
 		cvd: Cvd,
 		lambda: Lambda<{ TF_1MIN }, 61>,

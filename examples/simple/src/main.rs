@@ -11,7 +11,7 @@ use std::{path::PathBuf, time::Duration};
 
 use clap::Parser;
 use exec_viz::{Backpressure, Rec, Recorder, Tape, Viz};
-use trading_data::{Cell, Exact, ExchangeName, Feed, Fire, LatencyConfig, Observer, Present, ReadClock, Replay, RsiValues, Want, required_lanes};
+use trading_data::{Cell, Exact, ExchangeName, Feed, Fire, LatencyConfig, Observer, Present, ReadClock, Replay, Want, required_lanes};
 use trading_data_simple::{day_bounds, ensure_catalog, nodes::Graph, symbol};
 use v_utils::*;
 
@@ -111,7 +111,7 @@ struct Tally {
 	lambda_fires: u64,
 	cvd: f64,
 	vol1h: f64,
-	rsi_end: Option<RsiValues>,
+	rsi_end: Option<f64>,
 	lambda_end: Option<f64>,
 }
 impl Tally {
@@ -132,7 +132,7 @@ impl Tally {
 		// batching does not alter fold order ⇒ these are bit-identical to the pre-batch run.
 		assert_eq!(n_trades, 270164, "trade count changed");
 		assert_eq!(bars, 1439, "bar count changed");
-		// warm after base_len + smooth_len closes, and the day is three orders of magnitude longer.
+		// warm after 14 closes, and the day is three orders of magnitude longer.
 		assert!(rsi_snaps > 1_000, "RSI warmed on only {rsi_snaps} bars");
 		assert!(lambda_fires >= 1, "lambda never fired");
 		assert!(cvd != 0.0 && cvd.is_finite(), "day-end CVD degenerate: {cvd}");

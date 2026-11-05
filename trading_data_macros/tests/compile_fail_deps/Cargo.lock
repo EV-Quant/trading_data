@@ -1654,7 +1654,7 @@ dependencies = [
 
 [[package]]
 name = "trading_data_dag"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "trading_data_expr",
  "trading_data_macros",
@@ -1663,14 +1663,14 @@ dependencies = [
 
 [[package]]
 name = "trading_data_expr"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "libm",
 ]
 
 [[package]]
 name = "trading_data_macros"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -1905,3 +1905,11 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[patch.unused]]
+name = "exchange_interactions"
+version = "0.20.0"
+
+[[patch.unused]]
+name = "exec_viz"
+version = "0.3.0"
