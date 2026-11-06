@@ -28,8 +28,9 @@ Two sentences hold up everything below, and each sub-crate is one of them made m
 trading_data_expr           #![no_std], one dep (libm) — the primitive algebra: one expression, four readings
                             (eval / exact grad / LaTeX / value-annotated trace)
 trading_data_dag            core + alloc in its own source — domain-free derivation engine
-trading_data_derivatives    the fundamental primitives: bars, smoothers over any series (Wilder, EMA, Zipf), and the
-                            pieces an indicator is wired from (RSI's delta, gains, losses, ratio) — every strategy names these
+trading_data_derivatives    the fundamental primitives: bars, smoothers over any clocked series (Wilder, EMA, Zipf, and
+                            the windowed Wilder/EMA over their last K), and the pieces an indicator is wired from (RSI's
+                            delta, gains, losses, ratio) — every strategy names these
 trading_data_core           the shared parse boundary both exchange_interactions and persistence see: BatchTrades, the raw
                             columnar lane holders, the Book fold + ShadowBook, and (orphan rules) their dag impls
 trading_data_persistence    arrow/parquet — catalog, lanes, feather writer, and `sync`: the central replay/live weaver
@@ -107,9 +108,10 @@ consequences shape how a strategy is written; the mechanisms are `model.typ`'s s
   a hand-written badge on six indicators is six restatements of what one edge already said. What a
   skip costs the author is a *type*: an out with no unfired reading cannot be skipped, and says so
   at compile time.
-- **A node owns its rate.** How often a node publishes is declared on the node, never in its deps —
-  so no consumer can change the rate of what it reads, and a node clocked to a timeframe sees
-  completed elements only. The counterpart obligation is on the dep side: a read never says whether
+- **A node owns its rate.** A node that changes its input's rate declares the new one on itself,
+  never in its deps; one that preserves it (an element out per element in) has its input's by
+  construction, and the engine derives it — so no consumer can change the rate of what it reads,
+  and a node clocked to a timeframe sees completed elements only. The counterpart obligation is on the dep side: a read never says whether
   that dep produced *this tick*. Both, with their consequences, in
   [docs/spec/rates.md](spec/rates.md).
 

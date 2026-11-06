@@ -3,7 +3,8 @@
 use core::marker::PhantomData;
 
 use trading_data_dag::{
-	Carried, Cell, DepReads, Env, Folding, Folds, Nudge, Present, Reading, Series, Slots, Tag, Unbounded, Vars, Witness, absent, constant, lt, min, node, select, slice_nudge,
+	Buffering, Carried, Cell, DepReads, Elems, Env, Folding, Folds, Horizon, Nudge, Present, Reach, Reading, Rows, Series, Slots, Tag, Unbounded, Vars, Witness, absent, constant, lt, min,
+	node, select, slice_nudge,
 };
 
 /// A smoothing length — a number an app reading it from a config file has no const to give.
@@ -41,7 +42,7 @@ impl<X: Series<Item = Reading> + Nudge, L: Length> Cell for Wilder<X, L> {
 
 	const NAME: &'static str = Self::TAG.as_str();
 }
-#[node]
+#[node(clocked)]
 impl<X: Series<Item = Reading> + Nudge, L: Length> Folds for Wilder<X, L> {
 	type Deps = (Folding<X, Unbounded>,);
 
@@ -98,7 +99,7 @@ impl<X: Series<Item = Reading> + Nudge, L: Length> Cell for Ema<X, L> {
 
 	const NAME: &'static str = Self::TAG.as_str();
 }
-#[node]
+#[node(clocked)]
 impl<X: Series<Item = Reading> + Nudge, L: Length> Folds for Ema<X, L> {
 	type Deps = (Folding<X, Unbounded>,);
 
@@ -134,3 +135,124 @@ impl<X: Series<Item = Reading> + Nudge, L: Length> Folds for Ema<X, L> {
 	}
 }
 slice_nudge!([X: Series<Item = Reading> + Nudge, L: Length] Ema<X, L>, Reading);
+
+/// The element a `K`-long window drops as the next one enters: `K` back from the newest, so `K + 1`
+/// retained — a sum a braced const argument may not spell over its impl's own generics.
+#[doc(hidden)]
+pub struct Leaving<const K: usize>;
+impl<const K: usize> Reach for Leaving<K> {
+	const HORIZON: Horizon = Horizon::Elems(K + 1);
+}
+
+/// An exponential smoother over the last `K` elements only, normalised by the weight present in
+/// them: `Σ α(1-α)^m x_{j-m} / Σ α(1-α)^m p_{j-m}` over `m < K`, `p` an element's presence. A pure
+/// function of its last `K` elements, so two runs agree once both have seen `K` of them — to
+/// rounding, not bit for bit: each step adds the entering term and subtracts the leaving one, and
+/// the subtraction carries residue.
+///
+/// Absent until `K` elements have passed since a reset, and wherever the window holds no sample.
+macro_rules! windowed {
+	($ty:ident, $name:literal, $alpha:expr, $doc:literal) => {
+		#[doc = $doc]
+		pub struct $ty<X, L, const K: usize>(Carried, PhantomData<(X, L)>);
+		held!($ty [X, L, const K: usize] [X, L, K]);
+		impl<X: Series<Item = Reading> + Nudge, L: Length, const K: usize> $ty<X, L, K> {
+			const TAG: Tag = Tag::of($name, &[X::NAME, L::NAME]).count(K);
+		}
+		impl<X: Series<Item = Reading> + Nudge, L: Length, const K: usize> Cell for $ty<X, L, K> {
+			type Out<'t> = &'t [Reading];
+
+			const NAME: &'static str = Self::TAG.as_str();
+		}
+		#[node(clocked)]
+		/// `Rows` because the leaving element is read off the retention's own history.
+		impl<X: Series<Item = Reading, Batch = Rows<Reading>> + Nudge, L: Length, const K: usize> Folds for $ty<X, L, K> {
+			/// The fold states the window the value is a function of; the retention hands back the
+			/// element leaving it.
+			type Deps = (Folding<X, Elems<K>>, Buffering<X, crate::Leaving<K>>);
+
+			/// Elements folded since a reset (saturating at `K`), samples present in the window, the
+			/// weighted sum, and the weight.
+			const STATE: usize = 4;
+
+			/// Never declines: an absent element still moves the window, and must push its leaver out.
+			/// Slots past the state: the entering presence, then the leaving element and its presence.
+			fn read<W: Witness>((xs, held): DepReads<'_, Self>, i: usize, env: &mut Env<'_, W>) -> Option<i64> {
+				let x = xs.at(i).expect("element i of this tick's own run");
+				let present = x.present().is_some();
+				match present {
+					true => {
+						env.put(x);
+						// the retention's own copy of the same element, so its column stands for what it
+						// says; the body reads the lead's.
+						env.put(held.at(i).expect("the retention's fresh run is the lead's"));
+					}
+					false => {
+						env.attr(0.0);
+						env.attr(0.0);
+					}
+				}
+				env.attr(f64::from(u8::from(present)));
+				// read only once `K` elements were folded, and by then the retention — which steps on every
+				// tick the fold does — holds the one `K` back.
+				match held.lagged_at(i, K).filter(|p| p.present().is_some()) {
+					Some(out) => {
+						env.put(out);
+						env.attr(1.0);
+					}
+					None => {
+						env.attr(0.0);
+						env.attr(0.0);
+					}
+				}
+				Some(0)
+			}
+
+			fn step(&self, v: Vars) -> impl Slots {
+				let (x, folded, count, sum, weight) = (v.get::<0>(), v.get::<2>(), v.get::<3>(), v.get::<4>(), v.get::<5>());
+				let (p, x_out, p_out) = (v.get::<6>(), v.get::<7>(), v.get::<8>());
+				let (k, alpha) = (K as f64, $alpha);
+				let decay = (1.0 - alpha).powi(K as i32);
+				// before `K` were folded the window has dropped nothing it ever added — which is also what
+				// keeps a reset from subtracting the elements before it.
+				let full = select(lt(folded, constant(k)), constant(0.0), constant(1.0));
+				(
+					min(folded + constant(1.0), constant(k)),
+					count + p - full * p_out,
+					constant(1.0 - alpha) * sum + constant(alpha) * x - constant(alpha * decay) * full * x_out,
+					constant(1.0 - alpha) * weight + constant(alpha) * p - constant(alpha * decay) * full * p_out,
+				)
+			}
+
+			fn value(&self, v: Vars) -> impl Slots {
+				let (folded, count, sum, weight) = (v.get::<2>(), v.get::<3>(), v.get::<4>(), v.get::<5>());
+				select(
+					lt(folded, constant(K as f64)),
+					absent(),
+					select(lt(count, constant(0.5)), absent(), sum / weight),
+				)
+			}
+
+			fn carried(&self) -> &Carried {
+				&self.0
+			}
+
+			fn carried_mut(&mut self) -> &mut Carried {
+				&mut self.0
+			}
+		}
+		slice_nudge!([X: Series<Item = Reading> + Nudge, L: Length, const K: usize] $ty<X, L, K>, Reading);
+	};
+}
+windowed!(
+	WilderWindow,
+	"WilderWindow",
+	1.0 / L::len() as f64,
+	"[`Wilder`]'s weights, `α = 1/len`, over the last `K` elements — see the windowed smoothers above."
+);
+windowed!(
+	EmaWindow,
+	"EmaWindow",
+	2.0 / (L::len() as f64 + 1.0),
+	"[`Ema`]'s weights, `α = 2/(len+1)`, over the last `K` elements — see the windowed smoothers above."
+);

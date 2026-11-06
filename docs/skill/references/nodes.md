@@ -36,7 +36,7 @@ impl<const TF: Timeframe> MyNode<TF> {
 impl<const TF: Timeframe> Cell for MyNode<TF> {
     type Out<'t> = &'t [Option<f64>];
     const NAME: &'static str = Self::TAG.as_str();   // override only where the type carries parameters
-    const CLOCK: Option<Timeframe> = Some(TF);       // omit unless the node declares a rate
+    const CLOCK: Option<Timeframe> = Some(TF);       // only a rate-changing `Runs`/`Blind`/level node declares one
 }
 ```
 
@@ -222,6 +222,7 @@ shim are exported together.
 | `#[node]` | the default |
 | `#[node(latch)]` | this cell has a hand-written `impl Latch` (a separate impl) |
 | `#[node(anchored)]` | replay this node forward out of the driver's past on the tick it is demanded |
+| `#[node(clocked)]` | the leading dep must have an effective clock — a count-weighted smoother (`Wilder`, `Ema`, `Zipf`, the windowed two) |
 
 One shim per cell. Put `#[node]` on the body impl (`Blind`/`Runs`/`Symbolic`/`Decides`/`Scans`/
 `Closes`/`Folds`) and on `impl Episodic` (which publishes `Armed<Self>`'s dep instead).
@@ -236,7 +237,7 @@ What your out type owes, by what you want out of it.
 | `Flat` | the item is ever observed | `DIMS` must occupy **≥1 slot** (`r[outs.flat.nonempty]`); NaN per slot = no value there |
 | `Bump` | same | return the step *actually* taken; a discrete slot returns `0.0` and leaves its column NaN rather than fabricating a zero. An item no slot of which can move is a two-line macro of your own — `structural_bump!` in `examples/spl/src/nodes.rs` is the pattern, not a facade export |
 | `Unflat` | the item comes out of `Scans`/`Closes`/`Folds` | rebuilt from computed slots + the event time. Blanket for `f64`, `[f64; N]`, `Option<T>` |
-| `Stamped` | the series is ever `Buffering`-ed | a history you cannot index by time is one you can only read at an assumed cadence |
+| `Stamped` | the series is ever `Buffering`-ed over `Over` | a history you cannot index by time is one you can only read at an assumed cadence. A `Reading` series carries none and is retained by `Elems` alone |
 | `Present` | the series is ever `Sampling`-ed | `always_present!(Item)` where every element carries something. Blanket for `Option<T>` |
 | `Episode` | the item is a latch's `Cut` out | `&[T]` is terminal if **any** element is — the boundary was crossed somewhere in the run |
 | `Glance` | you want it on a card | the one compact line; display-dual of `Flat` |

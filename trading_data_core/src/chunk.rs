@@ -192,6 +192,8 @@ impl Glance for &BookChunk {
 impl Batch<BookDelta> for BookChunk {
 	type View<'t> = &'t BookChunk;
 
+	const SPANS: bool = true;
+
 	fn advance(&mut self, fresh: &[BookDelta], h: Horizon) {
 		let period = match h {
 			Horizon::Over(tf) => Horizon::ns(tf),

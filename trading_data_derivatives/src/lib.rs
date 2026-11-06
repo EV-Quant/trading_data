@@ -10,5 +10,7 @@ mod zipf;
 
 pub use bar::{Bar, Bars, Ohlc, Ohlcs, Volume, Volumes, closed_by};
 pub use rsi_node::{Gains, Losses, Rsi, RsiDelta};
-pub use smooth::{Ema, Length, Wilder};
+#[doc(hidden)]
+pub use smooth::Leaving;
+pub use smooth::{Ema, EmaWindow, Length, Wilder, WilderWindow};
 pub use zipf::{Zipf, ZipfSpec};

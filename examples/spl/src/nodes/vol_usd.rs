@@ -11,7 +11,6 @@ impl<const TF: Timeframe> VolUsd<TF> {
 impl<const TF: Timeframe> Cell for VolUsd<TF> {
 	type Out<'t> = &'t [f64];
 
-	const CLOCK: Option<Timeframe> = Some(TF);
 	const NAME: &'static str = Self::TAG.as_str();
 }
 #[node]

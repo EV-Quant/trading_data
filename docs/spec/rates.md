@@ -2,14 +2,17 @@
 
 r[rates.node.declared]
 
-How often a node publishes is a property **of that node**, stated on the node itself. It MUST NOT
-be derivable from, or overridable through, anything written in `Deps`. Two consumers naming the
-same input do not thereby run at different rates, and no consumer can change the rate of what it
-reads.
+How often a node publishes is a property **of that node**, never of anything written in `Deps`. A
+rate-*changing* node states its rate on itself. A rate-*preserving* kernel — one out element per
+element of the dep it walks (`Scans`, `Folds`) — has its leading dep's rate by construction, and a
+`Closes` has its `PERIOD`; neither restates it. Two consumers naming the same input do not thereby
+run at different rates, and no consumer can change the rate of what it reads.
 
 A rate that lives in a dep is a rate the node does not own: it becomes whatever its inputs happen
-to do, which is another way of saying it is whatever the weaver happened to deliver. Naming it on
-the node is what makes it a declaration rather than an observation.
+to do, which is another way of saying it is whatever the weaver happened to deliver. A preserved
+rate is not that — the kernel's walk is what makes it the input's, so the engine derives it rather
+than taking an observation for it, and a smoother weighting its elements by count can be refused an
+input that has none.
 
 r[rates.node.whole-elements]
 

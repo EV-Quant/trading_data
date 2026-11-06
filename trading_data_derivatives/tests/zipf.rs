@@ -8,10 +8,15 @@ use trading_data_dag::{Cell, Present, Reading, graph, slice_nudge};
 )]
 use trading_data_derivatives::__td_node_Zipf;
 use trading_data_derivatives::{Zipf, ZipfSpec};
+use v_utils::Timeframe;
 
+/// One sample per period, as a root of bars would publish: a count-weighted average says something
+/// about time only over a clocked series.
 struct Xs;
 impl Cell for Xs {
 	type Out<'t> = &'t [Reading];
+
+	const CLOCK: Option<Timeframe> = Some(Timeframe(60_000));
 }
 slice_nudge!(Xs, Reading);
 

@@ -143,11 +143,11 @@ fn observer_sees_topo_order_deps_and_values() {
 		let sweep = &mut sweep;
 		let f = Cons::<Trades, Nil> { out: trades, tail: Nil };
 		let f = Cons::<Quotes, _> { out: quotes, tail: f };
-		let f = step_obs(f, &mut a, sweep, rec);
-		let f = step_obs(f, &mut b, sweep, rec);
-		let f = step_obs(f, &mut c, sweep, rec);
-		let f = step_obs(f, &mut d, sweep, rec);
-		let f = step_obs(f, &mut cross, sweep, rec);
+		let f = step_obs(f, &mut a, || None, sweep, rec);
+		let f = step_obs(f, &mut b, || None, sweep, rec);
+		let f = step_obs(f, &mut c, || None, sweep, rec);
+		let f = step_obs(f, &mut d, || None, sweep, rec);
+		let f = step_obs(f, &mut cross, || None, sweep, rec);
 		(f.tail.head(), f.head())
 	};
 
@@ -262,7 +262,7 @@ impl Observer for JacRec {
 fn fd_linear_dep() {
 	let mut rec = JacRec::default();
 	let f = Cons::<Trades, Nil> { out: Some(2.0), tail: Nil };
-	step_obs(f, &mut A, &mut Sweep::default(), &mut rec);
+	step_obs(f, &mut A, || None, &mut Sweep::default(), &mut rec);
 	let jac = rec.0[0].as_ref().expect("A fired");
 	assert!((jac[0] - 2.0).abs() < 1e-3, "{jac:?}");
 }
@@ -294,7 +294,7 @@ fn fd_unfired_dep_nan_column() {
 	let mut rec = JacRec::default();
 	let f = Cons::<Trades, Nil> { out: None, tail: Nil };
 	let f = Cons::<Quotes, _> { out: Some(5.0), tail: f };
-	step_obs(f, &mut Level, &mut Sweep::default(), &mut rec);
+	step_obs(f, &mut Level, || None, &mut Sweep::default(), &mut rec);
 	let jac = rec.0[0].as_ref().expect("Level always fires");
 	assert!(jac[0].is_nan(), "{jac:?}");
 	assert!((jac[1] - 3.0).abs() < 1e-3, "{jac:?}");
@@ -343,7 +343,7 @@ fn a_tick_lands_where_it_would_have_unobserved() {
 			.map(|i| {
 				let f = Cons::<Trades, Nil> { out: Some(i as f64), tail: Nil };
 				let f = Cons::<Quotes, _> { out: Some(i as f64 * 0.5), tail: f };
-				step_obs(f, &mut tally, &mut sweep, &mut obs).head()
+				step_obs(f, &mut tally, || None, &mut sweep, &mut obs).head()
 			})
 			.collect()
 	}
@@ -377,7 +377,7 @@ impl Blind for OnOff {
 fn fd_discrete_dep_nan_column() {
 	let mut rec = JacRec::default();
 	let f = Cons::<Gate, Nil> { out: true, tail: Nil };
-	step_obs(f, &mut OnOff, &mut Sweep::default(), &mut rec);
+	step_obs(f, &mut OnOff, || None, &mut Sweep::default(), &mut rec);
 	let jac = rec.0[0].as_deref().expect("OnOff always fires");
 	assert!(jac[0].is_nan(), "a dep that cannot be perturbed has no slope, not a zero one: {jac:?}");
 }
@@ -421,7 +421,7 @@ fn a_level_fires_only_where_its_value_moved() {
 		sweep.restart();
 		let f = Cons::<Trades, Nil> { out: None, tail: Nil };
 		let f = Cons::<Quotes, _> { out: Some(q), tail: f };
-		step_obs(f, &mut level, &mut sweep, &mut seen);
+		step_obs(f, &mut level, || None, &mut sweep, &mut seen);
 	}
 	assert_eq!(seen.0, [(1, true), (0, false), (1, true), (0, false), (1, true)]);
 }
@@ -430,7 +430,7 @@ fn a_level_fires_only_where_its_value_moved() {
 fn fd_bump_unfired_nan_column() {
 	let mut rec = JacRec::default();
 	let f = Cons::<Trades, Nil> { out: Some(1.0), tail: Nil };
-	step_obs(f, &mut Under, &mut Sweep::default(), &mut rec);
+	step_obs(f, &mut Under, || None, &mut Sweep::default(), &mut rec);
 	let jac = rec.0[0].as_ref().expect("fires at the boundary");
 	assert!(jac[0].is_nan(), "{jac:?}");
 }

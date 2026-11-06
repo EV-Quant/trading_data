@@ -12,13 +12,15 @@ use syn::{ImplItem, Item, Type, UseTree, Visibility};
 // the compile-time half of the shim pairing: an unpaired name here is an unresolved import.
 #[expect(unused_imports, reason = "naming both halves of each pair is what this asserts")]
 use trading_data::{
-	__td_node_Bars, __td_node_Book, __td_node_Ema, __td_node_Gains, __td_node_Losses, __td_node_Ohlcs, __td_node_Rsi, __td_node_RsiDelta, __td_node_Volumes, __td_node_Wilder,
-	__td_node_Zipf, Bars, Book, Ema, Gains, Losses, Ohlcs, Rsi, RsiDelta, Volumes, Wilder, Zipf,
+	__td_node_Bars, __td_node_Book, __td_node_Ema, __td_node_EmaWindow, __td_node_Gains, __td_node_Losses, __td_node_Ohlcs, __td_node_Rsi, __td_node_RsiDelta, __td_node_Volumes,
+	__td_node_Wilder, __td_node_WilderWindow, __td_node_Zipf, Bars, Book, Ema, EmaWindow, Gains, Losses, Ohlcs, Rsi, RsiDelta, Volumes, Wilder, WilderWindow, Zipf,
 };
 
 /// The same pairs as data, checked against the facade below — so a pair added there cannot skip the
 /// import that proves it has both halves.
-const PAIRED: [&str; 11] = ["Bars", "Book", "Ema", "Gains", "Losses", "Ohlcs", "Rsi", "RsiDelta", "Volumes", "Wilder", "Zipf"];
+const PAIRED: [&str; 13] = [
+	"Bars", "Book", "Ema", "EmaWindow", "Gains", "Losses", "Ohlcs", "Rsi", "RsiDelta", "Volumes", "Wilder", "WilderWindow", "Zipf",
+];
 
 fn root() -> PathBuf {
 	Path::new(env!("CARGO_MANIFEST_DIR")).join("..")

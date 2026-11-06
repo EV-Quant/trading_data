@@ -42,7 +42,7 @@ fn a_verdict_over_an_absent_dep_is_not_traced() {
 	let (mut seen, mut sweep, mut screen) = (Readings::default(), Sweep::default(), Screen);
 	for m in [None, Some(2.0), Some(0.5)] {
 		sweep.restart();
-		step_obs(Cons::<Momentum, Nil> { out: m, tail: Nil }, &mut screen, &mut sweep, &mut seen);
+		step_obs(Cons::<Momentum, Nil> { out: m, tail: Nil }, &mut screen, || None, &mut sweep, &mut seen);
 	}
 	assert_eq!(seen.0, [(false, true, false), (true, true, true), (false, true, true)]);
 }

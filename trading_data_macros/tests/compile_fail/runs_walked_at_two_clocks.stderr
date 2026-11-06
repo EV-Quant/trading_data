@@ -1,0 +1,20 @@
+error[E0080]: evaluation panicked: __n_Spread walks bare runs at different clocks, or a clocked one beside an unclocked one — read the slower one through `Buffering` or `Sampling`
+  --> $DIR/trading_data_macros/tests/compile_fail/runs_walked_at_two_clocks.rs:LL:CC
+  |
+LL |   #[node]
+  = note: evaluation of `_` failed here
+...
+LL | / graph! {
+LL | |     struct G;
+LL | |     batches Batches;
+LL | |     roots { fast: Fast[f64], slow: Slow[f64] };
+LL | |     out GOut;
+LL | |     outputs { spread: Spread }
+LL | | }
+  | |_- in this macro invocation
+  |
+  = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the macro `::trading_data_dag::__graph_resolve` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0080`.

@@ -18,21 +18,28 @@ use crate::{
 	ty::{self, Wrap},
 };
 
-/// `#[node]`, `#[node(latch)]`, `#[node(anchored)]` — the flags the impl cannot state on its own,
-/// because the trait that would state either of them (`Latch`, `Rewound`) is a second impl and a
-/// node has only one shim.
+/// `#[node]`, `#[node(latch)]`, `#[node(anchored)]`, `#[node(clocked)]` — the flags the impl cannot
+/// state on its own: `Latch` and `Rewound` are second impls and a node has only one shim, and whether
+/// a leading dep is clocked is the graph's to derive.
 struct Flags {
 	latch: bool,
 	anchored: bool,
+	/// A count-weighted body, which says something about time only over a clocked series.
+	clocked: bool,
 }
 impl Parse for Flags {
 	fn parse(input: ParseStream) -> syn::Result<Self> {
-		let mut f = Flags { latch: false, anchored: false };
+		let mut f = Flags {
+			latch: false,
+			anchored: false,
+			clocked: false,
+		};
 		for i in Punctuated::<Ident, Token![,]>::parse_terminated(input)? {
 			match i.to_string().as_str() {
 				"latch" => f.latch = true,
 				"anchored" => f.anchored = true,
-				_ => return Err(syn::Error::new(i.span(), "expected `latch` or `anchored`")),
+				"clocked" => f.clocked = true,
+				_ => return Err(syn::Error::new(i.span(), "expected `latch`, `anchored` or `clocked`")),
 			}
 		}
 		Ok(f)
@@ -184,6 +191,7 @@ pub fn node(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
 	};
 	let latch = Ident::new(&flags.latch.to_string(), Span::call_site());
 	let anchored = Ident::new(&flags.anchored.to_string(), Span::call_site());
+	let clocked = Ident::new(&flags.clocked.to_string(), Span::call_site());
 
 	let deps_ty = assoc(&item, "Deps")
 		.ok_or_else(|| {
@@ -249,7 +257,7 @@ pub fn node(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
 		macro_rules! #name {
 			#m => {
 				$__driver! {
-					@kind #kind @latch #latch @anchored #anchored @self { #self_ty }
+					@kind #kind @latch #latch @anchored #anchored @clocked #clocked @self { #self_ty }
 					@deps [ #(#deps),* ]
 					@state $($__state)*
 				}

@@ -13,10 +13,11 @@ publish = false
 [dependencies]
 trading_data_macros = { path = "../.." }
 trading_data_dag = { path = "../../../trading_data_dag" }
+v_utils = { version = "^2.18.0", default-features = false }
 
 # The `tests/compile_fail/*.rs` cases name them; nothing under `src/` does.
 [package.metadata.cargo-machete]
-ignored = ["trading_data_dag", "trading_data_macros"]
+ignored = ["trading_data_dag", "trading_data_macros", "v_utils"]
 
 [lib]
 path = "src/lib.rs"

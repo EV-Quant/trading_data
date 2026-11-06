@@ -88,6 +88,7 @@ trading_data_dag::value_nudge
 trading_data_derivatives::Bar
 trading_data_derivatives::Bars
 trading_data_derivatives::Ema
+trading_data_derivatives::EmaWindow
 trading_data_derivatives::Gains
 trading_data_derivatives::Length
 trading_data_derivatives::Losses
@@ -98,10 +99,12 @@ trading_data_derivatives::RsiDelta
 trading_data_derivatives::Volume
 trading_data_derivatives::Volumes
 trading_data_derivatives::Wilder
+trading_data_derivatives::WilderWindow
 trading_data_derivatives::Zipf
 trading_data_derivatives::ZipfSpec
 trading_data_derivatives::__td_node_Bars
 trading_data_derivatives::__td_node_Ema
+trading_data_derivatives::__td_node_EmaWindow
 trading_data_derivatives::__td_node_Gains
 trading_data_derivatives::__td_node_Losses
 trading_data_derivatives::__td_node_Ohlcs
@@ -109,6 +112,7 @@ trading_data_derivatives::__td_node_Rsi
 trading_data_derivatives::__td_node_RsiDelta
 trading_data_derivatives::__td_node_Volumes
 trading_data_derivatives::__td_node_Wilder
+trading_data_derivatives::__td_node_WilderWindow
 trading_data_derivatives::__td_node_Zipf
 trading_data_derivatives::closed_by
 trading_data_expr::Ex

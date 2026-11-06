@@ -53,18 +53,22 @@ cannot change your results.
 | `.narrowed(h)` | a shallower view; asserts the retained reach serves it |
 
 `Rows<Item>` — every row — is the default `Series::Batch`. It **slides**: trimmed by `ts_ns` each
-tick, so `Over(tf)` is the last `tf` of wall clock ending now. A batch that *folds* (a book's levels
+tick, so `Over(tf)` is the last `tf` of wall clock ending now — or by count, for an item with no time
+(`Reading`), where an `Over` reach is a compile error. A batch that *folds* (a book's levels
 keep only the last qty per price) cannot un-fold, so it can only **tumble** — reset on the absolute
 boundary, floored from the epoch. Same declaration, different window; the views are different types,
 so no consumer can read one as the other.
 
-## `Cell::CLOCK` — how often, declared on the node
+## Clocks — derived, and declared only where nothing else says it
+
+`graph!` derives one effective clock per node. A root and a rate-changing node (`Runs`, `Blind`, a
+level) state theirs as `Cell::CLOCK`; a `Scans`/`Folds` has its leading data dep's, a `Closes` its
+`PERIOD` — and declaring one there is a build error.
 
 ```rust
-impl<const TF: Timeframe> Cell for Volumes<TF> {
-    type Out<'t> = &'t [Volume];
-    const CLOCK: Option<Timeframe> = Some(TF);
-    const NAME: &'static str = Self::TAG.as_str();
+impl Cell for Minutely {                 // a Runs node sampling a faster series
+    type Out<'t> = &'t [f64];
+    const CLOCK: Option<Timeframe> = Some(Timeframe(60_000));
 }
 ```
 
@@ -75,9 +79,11 @@ Declared by the node, enforced by whoever can: `Emitter::opens` withholds a tick
 every one of whose deps is `RETAINED`, because a withheld tick on a pass-through dep is a batch
 delivered to nobody.
 
-`graph!` const-asserts `clock_divides` — every feeding rate must tile a declared one. That also pins a
-period spelled twice: `Bars<TF>` names `TF` in its type and reads `Ohlcs<TF>`, so any `CLOCK` but
-`Some(TF)` fails to build.
+`graph!` const-asserts, over effective clocks: `clock_divides` — every feeding rate must tile a
+declared or period rate; bare runs a per-element kernel walks together agree on one clock; and a
+`#[node(clocked)]` smoother's leading dep has one. A smoother weights its elements by count, which is
+a statement about time only over a clocked series — so a smoother over a test root needs the root to
+declare a clock, as a root of bars would.
 
 ## Gating, demand, latches
 

@@ -43,8 +43,8 @@ It is for switching *which cell* is wired. Supplying a constant through it is ba
 | `Graph::FIDELITY: &[(&str, Fidelity)]` | every node the graph *declares* and how much of what it read its Jacobian covers. Count `Partial` and `Opaque` separately and pin both |
 | `<Graph as Roots>::required_events()` | `TypeId`s of the events some node's dep tree actually reached — a declared root nothing reaches is never loaded |
 
-Const-asserted at expansion: distinct node names · `cut_gated` · `deadlocked` ·
-`clock_divides(CLOCK, CLOCKS)`.
+Const-asserted at expansion: distinct node names · `cut_gated` · `deadlocked` · `clock_divides` and
+the other clock checks, over the effective clocks it derives (see deps.md).
 
 ## Routing — the whole layer
 

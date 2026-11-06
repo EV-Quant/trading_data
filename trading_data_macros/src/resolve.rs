@@ -16,6 +16,7 @@ enum Answer {
 		emit: bool,
 		latch: bool,
 		anchored: bool,
+		clocked: bool,
 		self_ty: TokenStream,
 		deps: Vec<Dep>,
 	},
@@ -30,6 +31,8 @@ fn read_answer(r: &mut Reader) -> Option<Answer> {
 		let latch = r.flag();
 		r.at("anchored");
 		let anchored = r.flag();
+		r.at("clocked");
+		let clocked = r.flag();
 		r.at("self");
 		let self_ty = r.brace();
 		r.at("deps");
@@ -42,6 +45,7 @@ fn read_answer(r: &mut Reader) -> Option<Answer> {
 			emit,
 			latch,
 			anchored,
+			clocked,
 			self_ty,
 			deps,
 		});
@@ -94,6 +98,7 @@ fn accept(st: &mut State, answer: Option<Answer>) -> Result<()> {
 				emit,
 				latch,
 				anchored,
+				clocked,
 				self_ty,
 				deps,
 			}),
@@ -113,6 +118,7 @@ fn accept(st: &mut State, answer: Option<Answer>) -> Result<()> {
 					generated: false,
 					latch,
 					anchored,
+					clocked,
 					deps,
 				},
 			)
@@ -126,6 +132,7 @@ fn accept(st: &mut State, answer: Option<Answer>) -> Result<()> {
 				generated: false,
 				latch: true,
 				anchored: false,
+				clocked: false,
 				deps: vec![arm],
 			},
 		),
@@ -216,6 +223,7 @@ fn visit(st: &mut State, dep: Dep) -> Result<Option<TokenStream>> {
 				generated: true,
 				latch: false,
 				anchored: false,
+				clocked: false,
 				deps: vec![Dep {
 					shim: dep.shim,
 					ty: cell.to_token_stream(),
@@ -356,6 +364,11 @@ fn emit(st: State) -> Result<TokenStream> {
 	let fields: Vec<Ident> = nodes.iter().map(|n| field_of(&n.key)).collect();
 	let indices: Vec<Literal> = (0..nodes.len()).map(Literal::usize_unsuffixed).collect();
 	let names: Vec<String> = nodes.iter().map(|n| n.key.clone()).collect();
+	// where each cell sits in the effective clocks, roots then sweep.
+	let roots = c.roots.len();
+	let cells = Literal::usize_unsuffixed(roots + nodes.len());
+	let root_ats: Vec<Literal> = (0..roots).map(Literal::usize_unsuffixed).collect();
+	let ats: Vec<Literal> = (0..nodes.len()).map(|i| Literal::usize_unsuffixed(roots + i)).collect();
 	let demand = crate::demand::suppressors(&st)?;
 	let (sup, rewinders) = (&demand.live, &demand.rewinders);
 
@@ -465,46 +478,53 @@ fn emit(st: State) -> Result<TokenStream> {
 
 	// the demand is hoisted into its own binding: as an argument it would sit after `f`, which the
 	// call moves before the gate reads could borrow it.
-	let steps = nodes.iter().zip(&fields).zip(sup).zip(&node_tys).zip(&pinned_awake).map(|((((n, f), s), ty), awake)| {
-		// a `Gate`'s out *is* the `bool`, and `Gating::opens` is the identity — nothing to unwrap.
-		let mut disj: Vec<TokenStream> = s
-			.iter()
-			.map(|conj| {
-				let terms = conj.iter().map(|g| match &standing[*g] {
-					Some(id) => quote!(#id),
-					None => {
-						let gt = &node_tys[*g];
-						quote!(#dag::Has::<#gt, _>::get(&f))
+	let steps = nodes
+		.iter()
+		.zip(&fields)
+		.zip(sup)
+		.zip(&node_tys)
+		.zip(&pinned_awake)
+		.zip(&ats)
+		.map(|(((((n, f), s), ty), awake), at)| {
+			// a `Gate`'s out *is* the `bool`, and `Gating::opens` is the identity — nothing to unwrap.
+			let mut disj: Vec<TokenStream> = s
+				.iter()
+				.map(|conj| {
+					let terms = conj.iter().map(|g| match &standing[*g] {
+						Some(id) => quote!(#id),
+						None => {
+							let gt = &node_tys[*g];
+							quote!(#dag::Has::<#gt, _>::get(&f))
+						}
+					});
+					quote!((#(#terms)&&*))
+				})
+				.collect();
+			disj.extend(awake.iter().cloned());
+			let demand = quote!(let d = #(#disj)||*;);
+			let uncond = s.len() == 1 && s[0].is_empty();
+			// at the node's own sweep position: its retention has stepped and its consumer has not read it
+			// yet, so this is the one point where the tick it is demanded on is still the tick it answers
+			// on. Conditioned on the whole of `advances`, not on the demand alone — an anchored node that
+			// nothing suppresses still goes dark behind its own gate, and rewinding one that will not run
+			// would be the fold the sleep was taken to avoid.
+			let rewind = n.anchored.then(|| {
+				let demanded = if uncond { quote!(true) } else { quote!(d) };
+				quote! {
+					if const { <P as #dag::Rewound<#ty>>::REWINDS } && #dag::advances::<#ty, _, _>(&f, #demanded) {
+						<P as #dag::Rewound<#ty>>::rewind(past, &mut *#f);
 					}
-				});
-				quote!((#(#terms)&&*))
-			})
-			.collect();
-		disj.extend(awake.iter().cloned());
-		let demand = quote!(let d = #(#disj)||*;);
-		let uncond = s.len() == 1 && s[0].is_empty();
-		// at the node's own sweep position: its retention has stepped and its consumer has not read it
-		// yet, so this is the one point where the tick it is demanded on is still the tick it answers
-		// on. Conditioned on the whole of `advances`, not on the demand alone — an anchored node that
-		// nothing suppresses still goes dark behind its own gate, and rewinding one that will not run
-		// would be the fold the sleep was taken to avoid.
-		let rewind = n.anchored.then(|| {
-			let demanded = if uncond { quote!(true) } else { quote!(d) };
-			quote! {
-				if const { <P as #dag::Rewound<#ty>>::REWINDS } && #dag::advances::<#ty, _, _>(&f, #demanded) {
-					<P as #dag::Rewound<#ty>>::rewind(past, &mut *#f);
 				}
-			}
+			});
+			let step = match (n.emit, uncond) {
+				(true, true) => quote!(let f = #dag::step_emit_obs(f, #f, true, ts, || Self::__CLOCKS[#at], __sweep, obs);),
+				(true, false) => quote!(#demand let f = #dag::step_emit_obs(f, #f, d, ts, || Self::__CLOCKS[#at], __sweep, obs);),
+				(false, true) => quote!(#rewind let f = #dag::step_obs(f, #f, || Self::__CLOCKS[#at], __sweep, obs);),
+				(false, false) => quote!(#demand #rewind let f = #dag::step_when_obs(f, #f, d, || Self::__CLOCKS[#at], __sweep, obs);),
+			};
+			let carry = carries(&n.key);
+			quote!(#step #carry)
 		});
-		let step = match (n.emit, uncond) {
-			(true, true) => quote!(let f = #dag::step_emit_obs(f, #f, true, ts, __sweep, obs);),
-			(true, false) => quote!(#demand let f = #dag::step_emit_obs(f, #f, d, ts, __sweep, obs);),
-			(false, true) => quote!(#rewind let f = #dag::step_obs(f, #f, __sweep, obs);),
-			(false, false) => quote!(#demand #rewind let f = #dag::step_when_obs(f, #f, d, __sweep, obs);),
-		};
-		let carry = carries(&n.key);
-		quote!(#step #carry)
-	});
 
 	// an `Emitter` resets through its own method: `Default::default()` on the wrapper would drop the
 	// buffer's capacity, which the next episode only has to earn back.
@@ -592,6 +612,64 @@ fn emit(st: State) -> Result<TokenStream> {
 			.collect()
 	};
 
+	// one effective clock per cell, roots then sweep — what every reader of a rate reads, since a
+	// rate-preserving node has its input's by construction and only the walk knows which input that is.
+	let rates: Vec<TokenStream> = nodes
+		.iter()
+		.zip(&node_tys)
+		.map(|(n, t)| match (n.generated, n.emit) {
+			// a `Buffer` retains its series element for element, and so is at that series' rate.
+			(true, _) => quote!(#dag::Rate::Lead),
+			(false, true) => quote!(<<#t as #dag::Emit>::Kernel as #dag::Kernel<#t>>::RATE),
+			(false, false) => quote!(<<#t as #dag::Node>::Kernel as #dag::Kernel<#t>>::RATE),
+		})
+		.collect();
+	let dep_ats: Vec<TokenStream> = demand
+		.deps
+		.iter()
+		.map(|ds| {
+			let ds = ds.iter().copied().map(Literal::usize_unsuffixed);
+			quote!(&[#(#ds),*])
+		})
+		.collect();
+	// the runs a per-element kernel walks side by side: bare or folded, so element `i` of each is read
+	// as one instant. A retained or sampled read is cross-rate by design and stands outside this.
+	let walked: Vec<TokenStream> = nodes
+		.iter()
+		.zip(&demand.deps)
+		.map(|(n, ds)| {
+			let runs = n
+				.deps
+				.iter()
+				.zip(ds)
+				.map(|(d, at)| Ok((crate::demand::cell(&st, &d.ty)?.1, *at)))
+				.collect::<Result<Vec<_>>>()?
+				.into_iter()
+				.filter(|(w, at)| matches!(w, Wrap::Bare | Wrap::Fold) && (*at < roots || nodes[*at - roots].emit))
+				.map(|(_, at)| Literal::usize_unsuffixed(at));
+			Ok(quote!(&[#(#runs),*]))
+		})
+		.collect::<Result<_>>()?;
+	let declared: Vec<(&Ident, &TokenStream, &TokenStream)> = nodes
+		.iter()
+		.zip(&fields)
+		.zip(&node_tys)
+		.zip(&rates)
+		.filter(|(((n, _), _), _)| !n.generated)
+		.map(|(((_, f), t), r)| (f, t, r))
+		.collect();
+	let (dfields, dtys, drates): (Vec<_>, Vec<_>, Vec<_>) = (
+		declared.iter().map(|d| d.0).collect(),
+		declared.iter().map(|d| d.1).collect(),
+		declared.iter().map(|d| d.2).collect(),
+	);
+	let clocked: Vec<usize> = (0..nodes.len()).filter(|i| nodes[*i].clocked).collect();
+	let (cfields, cdeps, cgates): (Vec<&Ident>, Vec<&TokenStream>, Vec<TokenStream>) = (
+		clocked.iter().map(|i| &fields[*i]).collect(),
+		clocked.iter().map(|i| &dep_ats[*i]).collect(),
+		clocked.iter().map(|i| &node_deps[*i]).map(|d| quote!(<#d as #dag::DepSet>::GATES)).collect(),
+	);
+
 	let shape = crate::shape::shape_const(&st, &demand, &node_tys);
 
 	Ok(quote! {
@@ -648,11 +726,29 @@ fn emit(st: State) -> Result<TokenStream> {
 				concat!(stringify!(#lfields), " gates its own arm: the arm is dark exactly while the latch is down, so it can never re-arm")
 			);)*
 
-			// a declared rate its inputs cannot deliver — and, where a node names its period in its own
-			// type and reads producers named for the same one, the pin that keeps the two from drifting.
+			// a rate its inputs cannot deliver. A rate-preserving node's is its lead's by construction, and
+			// what else it reads is either walked beside the lead (below) or a cross-rate read.
 			#(assert!(
-				#dag::clock_divides(<#node_tys as #dag::Cell>::CLOCK, <#node_deps as #dag::DepSet>::CLOCKS),
-				concat!(stringify!(#fields), " declares a `Cell::CLOCK` no whole number of its inputs' periods tiles")
+				matches!(#rates, #dag::Rate::Lead) || #dag::clock_divides(#graph::__CLOCKS[#ats], #dep_ats, &#graph::__CLOCKS),
+				concat!(stringify!(#fields), " publishes at a clock no whole number of its inputs' periods tiles")
+			);)*
+
+			// a rate the kernel's walk already fixes, stated a second time.
+			#(assert!(
+				matches!(#drates, #dag::Rate::Declared) || <#dtys as #dag::Cell>::CLOCK.is_none(),
+				concat!(stringify!(#dfields), " declares a `Cell::CLOCK` on a `Scans`/`Folds`/`Closes` — its rate is its leading dep's or its `PERIOD`, by construction: drop the declaration")
+			);)*
+
+			// element `i` of every run a per-element kernel walks is one instant only at one rate.
+			#(assert!(
+				matches!(#rates, #dag::Rate::Declared) || #dag::runs_agree(#walked, &#graph::__CLOCKS),
+				concat!(stringify!(#fields), " walks bare runs at different clocks, or a clocked one beside an unclocked one — read the slower one through `Buffering` or `Sampling`")
+			);)*
+
+			// a count-weighted body says something about time only over a clocked series.
+			#(assert!(
+				#dag::clock_of(#dag::Rate::Lead, ::core::option::Option::None, #cdeps, #cgates, &#graph::__CLOCKS).is_some(),
+				concat!(stringify!(#cfields), " is `#[node(clocked)]` and its leading dep has no clock — weighting its elements by count weights them by how the feed arrived: feed it a clocked series (bars), or a root that declares `Cell::CLOCK`")
 			);)*
 		};
 
@@ -678,6 +774,14 @@ fn emit(st: State) -> Result<TokenStream> {
 		}
 
 		impl #graph {
+			/// Every cell's effective clock, roots then sweep order — see `Rate`.
+			const __CLOCKS: [::core::option::Option<#dag::MacroTimeframe>; #cells] = {
+				let mut c = [::core::option::Option::None; #cells];
+				#(c[#root_ats] = <#root_tys as #dag::Cell>::CLOCK;)*
+				#(c[#ats] = #dag::clock_of(#rates, <#node_tys as #dag::Cell>::CLOCK, #dep_ats, <#node_deps as #dag::DepSet>::GATES, &c);)*
+				c
+			};
+
 			/// The derived closure, in sweep order — what this graph's outputs actually cost.
 			#vis const NODES: &'static [&'static str] = &[#(#names),*];
 
@@ -695,7 +799,7 @@ fn emit(st: State) -> Result<TokenStream> {
 			/// may fall silently; either may only rise in a diff that says why.
 			#vis const FIDELITY: &'static [(&'static str, #dag::Fidelity)] = &[#((#hatch_names, #fidelities)),*];
 
-			/// `ts` is the tick's event time in nanoseconds — what a node's declared `Emit::CLOCK` is
+			/// `ts` is the tick's event time in nanoseconds — what a node's declared `Cell::CLOCK` is
 			/// read against, and the only thing the sweep needs from a tick besides its batches.
 			///
 			/// Every anchored node is pinned awake here: `Awake` is a past that never rewinds, so nothing

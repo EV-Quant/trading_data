@@ -37,15 +37,15 @@ pub fn shape_const(st: &State, d: &Demand, node_tys: &[TokenStream]) -> TokenStr
 	let dag = &c.dag;
 	let roots = c.roots.len();
 
-	let root_nodes = c.roots.iter().map(|r| {
-		let (ty, field) = (&r.ty, r.field.to_string());
+	let root_nodes = c.roots.iter().enumerate().map(|(i, r)| {
+		let (ty, field, at) = (&r.ty, r.field.to_string(), Literal::usize_unsuffixed(i));
 		// a root is fed rather than computed: it reads nothing, nothing conditions it, and there is no
 		// kernel to owe a fidelity for.
 		quote! {
 			#dag::NodeShape {
 				name: #dag::node_name::<#ty>(),
 				kind: #dag::Kind::Root,
-				clock: <#ty as #dag::Cell>::CLOCK,
+				clock: Self::__CLOCKS[#at],
 				fidelity: #dag::Fidelity::Exact,
 				anchored: false,
 				pin: #dag::Pin::None,
@@ -92,6 +92,7 @@ pub fn shape_const(st: &State, d: &Demand, node_tys: &[TokenStream]) -> TokenStr
 			None => quote!(::core::option::Option::None),
 		};
 		let deps = indices(&d.deps[i]);
+		let at = Literal::usize_unsuffixed(roots + i);
 		// the formula is over the sweep, and `nodes` puts the roots first — a gate is never a root, so
 		// no shift here can collide with one.
 		let demand = d.live[i].iter().map(|conj| {
@@ -103,7 +104,7 @@ pub fn shape_const(st: &State, d: &Demand, node_tys: &[TokenStream]) -> TokenStr
 			#dag::NodeShape {
 				name: #dag::node_name::<#ty>(),
 				kind: #dag::Kind::#kind,
-				clock: <#ty as #dag::Cell>::CLOCK,
+				clock: Self::__CLOCKS[#at],
 				fidelity: #fidelity,
 				anchored: #anchored,
 				pin: #dag::Pin::#pin,

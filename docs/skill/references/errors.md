@@ -19,7 +19,11 @@ the fix; this table adds *why* it exists, so you don't work around it.
 | `dep cycle: A → B → A` | a graph is a dag | if the back edge means the *previous* tick, that is state the node keeps itself, not a dep |
 | `<field> gates its own arm` (`deadlocked`) | the arm is dark exactly while the latch is down, so it can never re-arm | drop the `Gating<Armed<Self>>` from the arm's deps |
 | `cut_gated` | the `Cut` must gate on the latch, or the episode cannot end | gate the `Cut` node on the latch |
-| ``<field> declares a `Cell::CLOCK` no whole number of its inputs' periods tiles`` | a node observing fractions of its inputs' elements is neither rate | fix `CLOCK`, or the producer's |
+| ``<field> publishes at a clock no whole number of its inputs' periods tiles`` | a node observing fractions of its inputs' elements is neither rate | fix `CLOCK`, or the producer's |
+| ``<field> declares a `Cell::CLOCK` on a `Scans`/`Folds`/`Closes` `` | a rate-preserving walk has its leading dep's rate, a `Closes` its `PERIOD` — by construction | drop the declaration |
+| ``<field> walks bare runs at different clocks`` | element `i` of each run is one instant only at one rate | read the slower one through `Buffering` or `Sampling` |
+| ``<field> is `#[node(clocked)]` and its leading dep has no clock`` | a count-weighted smoother over an unclocked series weights by how the feed arrived | feed it bars, or a root that declares `Cell::CLOCK` |
+| ``an `Over` reach over a series whose items carry no time`` | a `Reading` is retained by count; nothing locates a span in it | `Elems<N>` |
 | ``<node> is `#[node(anchored)]` and folds <dep> itself`` | a `Folding` reach is the node's own state; a rewind re-reading it would fold it twice | `Buffering<dep, R>` — the reach becomes the frame's |
 | `outputs` empty / `roots` empty | a graph that produces nothing is built out of nothing | name at least one of each |
 | ``add `trading_data` to this crate's `[dependencies]``` | generated code reaches the dag through the invoking crate's own path | depend on the facade — and **only** the facade |
@@ -35,7 +39,8 @@ the fix; this table adds *why* it exists, so you don't work around it.
 | ``{Self}` cannot be read as a flat element`` | `impl Flat`: state `DIMS`, write every slot, return whether it fired |
 | ``{Self}` cannot be perturbed`` | `impl Bump`. A slot that cannot move returns `(self, 0.0)` — its column stays NaN, never a fabricated zero |
 | ``{Self}` cannot be rebuilt from the slots a kernel computed`` | `impl Unflat` — a per-element kernel writes `f64` slots and the run is made of items |
-| ``{Self}` carries no event time`` | `impl Stamped`: the default `Rows` retention trims by `ts_ns` every tick |
+| ``{Self}` carries no event time`` | `impl Stamped`: an item says when it happened through `ts_ns` |
+| ``{Self}` cannot be retained by `Rows` `` | `impl Stamped` (timed by that), or — for an item with no time — `Timed` with `TIMED = false`, retained by count |
 | ``{Self}` has no one-line reading`` | `impl Glance` — every stepped node is drawable |
 | ``{Self}` is not a gate`` | `impl Gate for {Self} {}` — and its out must be `bool` |
 | ``{Self}` says nothing about an episode ending`` | `impl Episode` — a latch commutates on its `Cut`'s terminal out |

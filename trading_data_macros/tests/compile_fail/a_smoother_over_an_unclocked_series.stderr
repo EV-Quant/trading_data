@@ -1,0 +1,20 @@
+error[E0080]: evaluation panicked: __n_Smooth is `#[node(clocked)]` and its leading dep has no clock — weighting its elements by count weights them by how the feed arrived: feed it a clocked series (bars), or a root that declares `Cell::CLOCK`
+  --> $DIR/trading_data_macros/tests/compile_fail/a_smoother_over_an_unclocked_series.rs:LL:CC
+  |
+LL |   #[node(clocked)]
+  = note: evaluation of `_` failed here
+...
+LL | / graph! {
+LL | |     struct G;
+LL | |     batches Batches;
+LL | |     roots { src: Src[f64] };
+LL | |     out GOut;
+LL | |     outputs { smooth: Smooth }
+LL | | }
+  | |_- in this macro invocation
+  |
+  = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the macro `::trading_data_dag::__graph_resolve` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0080`.

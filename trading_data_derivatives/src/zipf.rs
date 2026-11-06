@@ -73,7 +73,7 @@ impl<X: Series<Item = Reading> + Nudge, S: ZipfSpec, const N: usize> Cell for Zi
 
 	const NAME: &'static str = Self::TAG.as_str();
 }
-#[node]
+#[node(clocked)]
 impl<X: Series<Item = Reading> + Nudge, S: ZipfSpec, const N: usize> Folds for Zipf<X, S, N> {
 	type Deps = (Folding<X, Unbounded>,);
 

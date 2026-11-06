@@ -12,12 +12,15 @@ use trading_data_dag::{Cell, Elems, Present, graph, slice_nudge};
 )]
 use trading_data_derivatives::{__td_node_Ema, __td_node_Gains, __td_node_Losses, __td_node_Rsi, __td_node_RsiDelta, __td_node_Wilder};
 use trading_data_derivatives::{Bar, Ema, Gains, Length, Losses, Rsi, RsiDelta, Wilder};
+use v_utils::Timeframe;
 
 /// The bars arrive from the test rather than from a `Closes` over trades: what is under test is the
 /// chain above them, and a root series is the shortest thing that feeds it.
 struct Closes;
 impl Cell for Closes {
 	type Out<'t> = &'t [Bar];
+
+	const CLOCK: Option<Timeframe> = Some(Timeframe(60_000));
 }
 slice_nudge!(Closes, Bar);
 

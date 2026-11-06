@@ -177,9 +177,9 @@ impl Horizon {
 
 	/// The wall-clock depth this reach comes to against a producer publishing every `clock` — the
 	/// direction warmup is measured in. What a replay must preload is a *duration*, and `Elems(n)`
-	/// becomes one only once the producer's rate is known, which is what [`Cell::CLOCK`] supplies:
-	/// with every producer's clock static, a consumer's declared reach resolves to a depth at compile
-	/// time instead of being a hand-picked replay range.
+	/// becomes one only once the producer's rate is known, which its effective clock supplies: with
+	/// every producer's clock static, a consumer's declared reach resolves to a depth at compile time
+	/// instead of being a hand-picked replay range.
 	///
 	/// The inverse is not the useful one. `Over → Elems` yields a buffer capacity, and [`Buffer`]
 	/// already trims on timestamps (see [`Hist::all`]) without ever needing a count.
@@ -357,16 +357,39 @@ const fn timeframe(buf: &mut [u8; 256], len: usize, tf: Timeframe) -> usize {
 	write(buf, len, designator.as_str().as_bytes())
 }
 
-/// A retained item's own event time. Required of every [`Buffer`]ed item — a history you cannot
-/// index by time is one you can only read at an assumed cadence, which is the bug [`Horizon::Over`]
-/// replaces.
+/// An item's own event time — what an [`Over`] reach is located by. A history you cannot index by
+/// time is one you can only read at an assumed cadence, which is the bug [`Horizon::Over`] replaces.
 #[diagnostic::on_unimplemented(
 	message = "`{Self}` carries no event time",
 	label = "no `Stamped` impl",
-	note = "the default `Rows` retention trims by `ts_ns` on every tick, so an item it holds has to be able to say when it happened — or name a `Series::Batch` that keeps its reach some other way"
+	note = "an item says when it happened through `ts_ns`, which is what a reach over wall clock trims on"
 )]
 pub trait Stamped {
 	fn ts_ns(&self) -> i64;
+}
+
+/// Whether a retained item carries an event time — what the default [`Rows`] retention needs to know
+/// to hold it. Time is needed only by an [`Over`] reach: a timed item is retained either way, an
+/// untimed one by count alone, and an `Over` reach over it is refused where the reach is stated
+/// ([`Buffering`], [`Buffer`]).
+#[diagnostic::on_unimplemented(
+	message = "`{Self}` cannot be retained by `Rows`",
+	label = "no `Timed` impl",
+	note = "an item that says when it happened implements `Stamped` and is timed by that; one that carries no time — a `Reading` — implements `Timed` with `TIMED = false` and is retained by count"
+)]
+pub trait Timed {
+	const TIMED: bool;
+	/// Reached only where [`TIMED`](Timed::TIMED) holds.
+	fn time_ns(&self) -> i64;
+}
+
+impl<T: Stamped> Timed for T {
+	const TIMED: bool = true;
+
+	#[inline(always)] // without it LLVM stops folding `Rows`' trim to its reach: `buffer_cost` reads +2%
+	fn time_ns(&self) -> i64 {
+		self.ts_ns()
+	}
 }
 
 /// A value slot in the frame. `Out<'t>: Copy` — references are `Copy`, so a batch out enters the
@@ -406,18 +429,15 @@ pub trait Cell {
 	/// holds every input the node would have read.
 	const RETAINED: bool = false;
 
-	/// How often this cell publishes, stated on the cell because the rate is a property of what a
-	/// thing *is* and of nothing it reads (`rates.node.declared`). `None` — whenever its inputs do.
-	/// `Some(tf)` — over elements whose `tf` period has closed, never re-entered while one is in
-	/// progress (`rates.node.whole-elements`).
+	/// How often this cell publishes, for a root and for a node whose kernel changes its input's rate
+	/// (`rates.node.declared`). `None` — whenever its inputs do. `Some(tf)` — over elements whose `tf`
+	/// period has closed, never re-entered while one is in progress (`rates.node.whole-elements`).
 	///
-	/// Here rather than on [`Emit`] for the reason [`REACH`](Cell::REACH) is: [`DepSet`] is over
-	/// tuples of cells, so this is what lets a consumer's declared reach be read against its
-	/// producer's rate — the `Elems(n)` → duration conversion of [`Horizon::span`] — and what lets
-	/// [`graph!`] check a node's clock against the ones feeding it.
+	/// A rate-preserving kernel's rate is its leading dep's and a [`Closes`]'s is its `PERIOD`, so
+	/// those never declare one — [`Kernel::RATE`] says which, and [`graph!`] derives every node's
+	/// effective clock from it.
 	///
-	/// Who *enforces* it follows [`RETAINED`](Cell::RETAINED), not the declaration: see
-	/// `Emitter::opens`.
+	/// Who *enforces* the declaration follows [`RETAINED`](Cell::RETAINED): see `Emitter::opens`.
 	const CLOCK: Option<Timeframe> = None;
 
 	/// Whether a consumer naming this in dep position is *dominated* by it — [`Gating`] alone. A type
@@ -631,6 +651,16 @@ impl Present for Reading {
 
 	fn present(self) -> Option<f64> {
 		self.get()
+	}
+}
+
+/// A reading is an element of a series and knows nothing of when it was taken, so it is retained by
+/// count.
+impl Timed for Reading {
+	const TIMED: bool = false;
+
+	fn time_ns(&self) -> i64 {
+		unreachable!("a `Reading` carries no time, and an `Over` reach over one is refused at the `Buffering`/`Buffer` const asserts — no other path asks")
 	}
 }
 
@@ -945,9 +975,6 @@ pub trait DepSet {
 	/// Per-dep [`Cell::RETAINED`], positionally — which of these inputs survive a tick the node is
 	/// not run on, and so whether a declared rate is the engine's to enforce.
 	const RETAINS: &'static [bool];
-	/// Per-dep [`Cell::CLOCK`], positionally — the rates feeding this node, which is what a
-	/// consumer's own rate is checked against and what turns its `Elems(n)` reach into a duration.
-	const CLOCKS: &'static [Option<Timeframe>];
 	/// Per-dep [`Cell::Gates`], positionally — which of these inputs are the node's gates.
 	const GATES: &'static [bool];
 	/// The leading dep's [`Cell::Gates`], which — gating deps leading, as [`Pull::open`] const-asserts
@@ -1043,8 +1070,10 @@ pub trait DepFlat: DepSet {
 	fn stage<'t>(outs: Self::Outs<'t>, scratch: &mut Self::Scratch, slot: usize, h: f64) -> f64;
 	/// Views staged `scratch` as dep outs at the borrow's own lifetime `'l`.
 	fn view<'l>(scratch: &'l Self::Scratch) -> Self::Outs<'l>;
-	/// How many elements the *leading* dep fired. That dep is the one a per-element kernel walks —
-	/// its rate is the node's — so which dep drives is structural rather than a per-node declaration.
+	/// How many elements the *leading data* dep fired — the first that is not a [`Gating`] one, since
+	/// a gate is permission and has no elements. That dep is the one a per-element kernel walks — its
+	/// rate is the node's ([`Rate::Lead`]) — so which dep drives is structural rather than a per-node
+	/// declaration.
 	fn lead_fires(outs: &Self::Outs<'_>) -> usize;
 }
 
@@ -1259,7 +1288,7 @@ where
 	for<'x> E: Cell<Out<'x> = &'x [<E as Series>::Item]>, {
 	node: E,
 	buf: alloc::vec::Vec<E::Item>,
-	/// The [`Emit::CLOCK`] period `emit` last ran in; `i64::MIN` is "none yet", which no timestamp
+	/// The [`Cell::CLOCK`] period `emit` last ran in; `i64::MIN` is "none yet", which no timestamp
 	/// divides to. Carried by the wrapper rather than the node for the same reason the buffer is:
 	/// the rate is declared, and what enforces it is not the declarer's to fiddle with.
 	last_period: i64,
@@ -1313,15 +1342,19 @@ impl<E: Emit> Emitter<E>
 where
 	for<'x> E: Cell<Out<'x> = &'x [<E as Series>::Item]>,
 {
-	/// Whether [`Emit::CLOCK`] admits this tick: an unclocked node every one, a clocked one the first
-	/// of each of its periods. Read after the gate, so a shut node consumes no period and the first
-	/// tick it is let through is a boundary rather than the remainder of one it slept out.
+	/// Whether the declared [`Cell::CLOCK`] admits this tick: an unclocked node every one, a clocked
+	/// one the first of each of its periods. Read after the gate, so a shut node consumes no period
+	/// and the first tick it is let through is a boundary rather than the remainder of one it slept
+	/// out.
 	///
 	/// Only a node reading what the engine keeps ([`Cell::RETAINED`]) is one the engine may withhold
 	/// a tick from: a withheld tick is a batch never delivered, and a pass-through dep — a bare cell,
 	/// a [`Folding`] reach, a [`Gating`] permission — has no second showing of it. Such a
 	/// node is clocked by the element walk it already runs (`rates.folds.exactly-once`), and the
 	/// declaration is all the engine takes from it.
+	///
+	/// The *declared* clock, never the effective one: a rate-preserving node is clocked by its walk
+	/// already, and gating it by tick time would drop the element its input closes a tick late.
 	fn opens(&mut self, ts: i64) -> bool {
 		let Some(tf) = <E as Cell>::CLOCK else { return true };
 		if !all(<E::Deps as DepSet>::RETAINS) {
@@ -1691,7 +1724,7 @@ impl<const D: usize, O: Lagged> Dep<D, O> {
 	}
 }
 
-impl<'t, const D: usize, T: Flat + Stamped> Dep<D, Hist<'t, T>> {
+impl<'t, const D: usize, T: Flat + Timed> Dep<D, Hist<'t, T>> {
 	/// The element `n` back from `fresh()[i]` — see [`Hist::lagged_at`].
 	pub fn lagged_at(self, i: usize, n: usize) -> Option<Pick<D, T>> {
 		let (elem, lag) = self.0.lagged_at(i, n)?;
@@ -1805,6 +1838,9 @@ pub trait Kernel<N: Cell + Wired + ?Sized>: sealed::Kernel {
 	/// How much of what the body read [`jac`](Kernel::jac) covers.
 	const FIDELITY: Fidelity;
 
+	/// Where the node's rate comes from (`rates.node.declared`).
+	const RATE: Rate;
+
 	/// What the sweep advances. A level node is its own host; a run node's is the [`Emitter`] beside
 	/// it, which owns the buffer the run is filled into and the `last_period` its rate is enforced
 	/// against. That the storage sits here rather than in a second argument is the whole of why one
@@ -1860,6 +1896,54 @@ pub trait Kernel<N: Cell + Wired + ?Sized>: sealed::Kernel {
 		for<'x> N::Out<'x>: Flat, {
 		false
 	}
+}
+
+/// Where a node's rate comes from — the kernel's to say, since only the kernel knows whether its walk
+/// emits one element per element read. [`graph!`] reads it to derive every node's effective clock.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Rate {
+	/// One out element per element of the leading data dep, so that dep's rate.
+	Lead,
+	/// One element per period of this clock.
+	Period(Timeframe),
+	/// Whatever the node's own [`Cell::CLOCK`] says, which nothing else can.
+	Declared,
+}
+
+/// One node's effective clock, over the ones `graph!` has already derived for the cells before it in
+/// the sweep. `deps` indexes `clocks` positionally with the node's `Deps`; `gates` is
+/// [`DepSet::GATES`], since a gate is permission and walks nothing.
+#[doc(hidden)]
+pub const fn clock_of(rate: Rate, declared: Option<Timeframe>, deps: &[usize], gates: &[bool], clocks: &[Option<Timeframe>]) -> Option<Timeframe> {
+	match rate {
+		Rate::Declared => declared,
+		Rate::Period(tf) => Some(tf),
+		Rate::Lead => {
+			let mut i = 0;
+			while i < gates.len() && gates[i] {
+				i += 1;
+			}
+			assert!(i < deps.len(), "a per-element kernel walks its leading data dep, and this node reads none");
+			clocks[deps[i]]
+		}
+	}
+}
+
+/// Whether the bare runs a per-element kernel reads together agree on a clock — element `i` of each
+/// is one instant only if they publish at one rate, and a clocked run walked beside an unclocked one
+/// has no such instant at all.
+#[doc(hidden)]
+pub const fn runs_agree(runs: &[usize], clocks: &[Option<Timeframe>]) -> bool {
+	let mut i = 1;
+	while i < runs.len() {
+		match (clocks[runs[0]], clocks[runs[i]]) {
+			(Some(a), Some(b)) if a.0 != b.0 => return false,
+			(Some(_), None) | (None, Some(_)) => return false,
+			_ => {}
+		}
+		i += 1;
+	}
+	true
 }
 
 /// What a Jacobian is read against: this tick's pulled deps, their un-bumped flattenings, and the
@@ -1998,6 +2082,7 @@ where
 	/// `env_of` const-asserts one scalar env slot per dep, so a `Symbolic` body's reach is a point
 	/// whatever the dep wrapper retains — and a gradient at a point covers all of it.
 	const FIDELITY: Fidelity = Fidelity::Exact;
+	const RATE: Rate = Rate::Declared;
 
 	fn advance<'t>(n: &'t mut N, deps: DepOuts<'t, N>) -> N::Out<'t> {
 		const {
@@ -2082,6 +2167,7 @@ where
 	type Pre = Option<N>;
 
 	const FIDELITY: Fidelity = Fidelity::Opaque(<N as Blind>::WHY);
+	const RATE: Rate = Rate::Declared;
 
 	fn advance<'t>(n: &'t mut N, deps: DepOuts<'t, N>) -> N::Out<'t> {
 		<N as Blind>::advance(n, deps)
@@ -2161,6 +2247,7 @@ where
 	/// A predicate's slope is zero off the boundary, and at the boundary it is a step no reading may
 	/// call a slope — so an all-zero Jacobian is the whole truth about it, not an omission.
 	const FIDELITY: Fidelity = Fidelity::Exact;
+	const RATE: Rate = Rate::Declared;
 
 	fn advance<'t>(n: &'t mut N, deps: DepOuts<'t, N>) -> N::Out<'t> {
 		let body = n.body(Vars);
@@ -2228,6 +2315,7 @@ where
 	type Pre = Option<E>;
 
 	const FIDELITY: Fidelity = Fidelity::Opaque(<E as Runs>::WHY);
+	const RATE: Rate = Rate::Declared;
 
 	fn advance<'t>(host: &'t mut Emitter<E>, deps: DepOuts<'t, E>) -> &'t [E::Item] {
 		let (e, out) = host.lend();
@@ -2380,6 +2468,7 @@ where
 	/// Every slot of a per-element env is a copy of one element slot, and [`Env`] reports which — so
 	/// whatever the body reached back over, [`exact`](Kernel::exact) covers it.
 	const FIDELITY: Fidelity = Fidelity::Exact;
+	const RATE: Rate = Rate::Lead;
 
 	fn advance<'t>(host: &'t mut Emitter<E>, deps: DepOuts<'t, E>) -> &'t [E::Item] {
 		let (e, out) = host.lend();
@@ -2602,6 +2691,7 @@ where
 	/// recurrence is not — but the same kind of omission, and `r[kernels.fidelity.stated]` is exactly
 	/// the rule against calling it exact.
 	const FIDELITY: Fidelity = Fidelity::Partial("the elements earlier in the period, which the accumulator carries and no column stands for");
+	const RATE: Rate = Rate::Period(<E as Closes>::PERIOD);
 
 	fn advance<'t>(host: &'t mut Emitter<E>, deps: DepOuts<'t, E>) -> &'t [E::Item] {
 		let (e, out) = host.lend();
@@ -2836,6 +2926,7 @@ where
 	type Pre = Option<PerElem>;
 
 	const FIDELITY: Fidelity = Fidelity::Partial("state history, by design");
+	const RATE: Rate = Rate::Lead;
 
 	fn advance<'t>(host: &'t mut Emitter<E>, deps: DepOuts<'t, E>) -> &'t [E::Item] {
 		let (e, out) = host.lend();
@@ -3148,7 +3239,7 @@ where
 	type Item: Copy + 'static;
 	/// How a [`Buffer`] over this series accumulates its reach. [`Rows`] — every row, handed out as a
 	/// [`Hist`] — unless the series says otherwise. Unbounded here: only a *buffered* series owes a
-	/// working [`Batch`], and the `Item: Stamped` [`Rows`] needs is not every series' to carry.
+	/// working [`Batch`], and the `Item: Timed` [`Rows`] needs is not every series' to carry.
 	type Batch: 'static;
 }
 
@@ -3168,6 +3259,9 @@ pub trait Batch<T>: Clone + Default {
 	where
 		Self: 't,
 		T: 't;
+
+	/// Whether this retention can hold an [`Over`] reach — a span needs items it can locate in time.
+	const SPANS: bool;
 
 	/// Trim to `h`, then append `fresh`. Trimming *before* the append is what makes `past` mean "what
 	/// stood behind this tick's batch" — see the note at [`Buffer`].
@@ -3189,7 +3283,8 @@ pub trait Batch<T>: Clone + Default {
 		T: Bump;
 }
 
-/// The default [`Batch`]: every row, trimmed on timestamps, handed out as a [`Hist`].
+/// The default [`Batch`]: every row, trimmed on timestamps where its items are [`Timed`] and by count
+/// where they are not, handed out as a [`Hist`].
 pub struct Rows<T> {
 	buf: alloc::vec::Vec<T>,
 	/// Where the retained window starts. Trimming by `drain(..n)` memmoved the whole window every
@@ -3199,7 +3294,8 @@ pub struct Rows<T> {
 	/// The highest `ts_ns` this batch cannot speak for: the last one dropped, or — before the first
 	/// drop — the first one ever seen, since nothing proves the run reached back past it. A
 	/// [`Horizon::Over`] window is complete iff it begins strictly after this, which is exact where
-	/// "have I been running long enough" is a guess.
+	/// "have I been running long enough" is a guess. Kept for a timed item only: an untimed one has
+	/// no `Over` reach to complete.
 	watermark: i64,
 	fresh: usize,
 }
@@ -3237,11 +3333,13 @@ impl<T: Clone> Clone for Rows<T> {
 	}
 }
 
-impl<T: Copy + Stamped> Batch<T> for Rows<T> {
+impl<T: Copy + Timed> Batch<T> for Rows<T> {
 	type View<'t>
 		= Hist<'t, T>
 	where
 		T: 't;
+
+	const SPANS: bool = T::TIMED;
 
 	fn advance(&mut self, fresh: &[T], h: Horizon) {
 		let drop = {
@@ -3250,8 +3348,8 @@ impl<T: Copy + Stamped> Batch<T> for Rows<T> {
 				Horizon::Elems(k) => win.len().saturating_sub(k),
 				Horizon::Over(tf) => match win.last() {
 					Some(newest) => {
-						let cut = newest.ts_ns() - Horizon::ns(tf);
-						win.partition_point(|x| x.ts_ns() <= cut)
+						let cut = newest.time_ns() - Horizon::ns(tf);
+						win.partition_point(|x| x.time_ns() <= cut)
 					}
 					None => 0,
 				},
@@ -3259,7 +3357,9 @@ impl<T: Copy + Stamped> Batch<T> for Rows<T> {
 			}
 		};
 		if drop > 0 {
-			self.watermark = self.watermark.max(self.buf[self.cur + drop - 1].ts_ns());
+			if T::TIMED {
+				self.watermark = self.watermark.max(self.buf[self.cur + drop - 1].time_ns());
+			}
 			self.cur += drop;
 			// Reclaim only once the dropped prefix dominates, as `sync::Lane::compact` does: amortized
 			// O(1) an element, against a memmove of the whole window on every tick.
@@ -3268,10 +3368,11 @@ impl<T: Copy + Stamped> Batch<T> for Rows<T> {
 				self.cur = 0;
 			}
 		}
-		if self.watermark == i64::MIN
+		if T::TIMED
+			&& self.watermark == i64::MIN
 			&& let Some(first) = fresh.first()
 		{
-			self.watermark = first.ts_ns();
+			self.watermark = first.time_ns();
 		}
 		self.buf.extend_from_slice(fresh);
 		self.fresh = fresh.len();
@@ -3448,7 +3549,7 @@ impl<'t, T> Hist<'t, T> {
 	}
 }
 
-impl<'t, T: Stamped> Hist<'t, T> {
+impl<'t, T: Timed> Hist<'t, T> {
 	/// What stood behind this tick's batch, at the declared reach — see [`Hist::all`].
 	pub fn past(self) -> &'t [T] {
 		let all = self.all();
@@ -3473,8 +3574,8 @@ impl<'t, T: Stamped> Hist<'t, T> {
 			// itself trims against, so what a frame retains at `H` and what a consumer reads at `H` are
 			// one statement.
 			Horizon::Over(tf) => {
-				let cut = self.all[newest].ts_ns() - Horizon::ns(tf);
-				self.all[..past].partition_point(|x| x.ts_ns() <= cut)
+				let cut = self.all[newest].time_ns() - Horizon::ns(tf);
+				self.all[..past].partition_point(|x| x.time_ns() <= cut)
 			}
 			h => unreachable!("a Buffering is const-asserted bounded, and `narrowed` re-asserts it: {h:?}"),
 		};
@@ -3495,8 +3596,8 @@ impl<'t, T: Stamped> Hist<'t, T> {
 			// exclusive: the window is the last `ms` of wall clock, the same predicate the buffer trims
 			// on — so what it retains and what a consumer reads are one statement.
 			Horizon::Over(tf) => {
-				let cut = self.all[end - 1].ts_ns() - Horizon::ns(tf);
-				(cut >= self.watermark).then(|| &self.all[self.all[..end].partition_point(|x| x.ts_ns() <= cut)..end])
+				let cut = self.all[end - 1].time_ns() - Horizon::ns(tf);
+				(cut >= self.watermark).then(|| &self.all[self.all[..end].partition_point(|x| x.time_ns() <= cut)..end])
 			}
 			h => unreachable!("a Buffering is const-asserted bounded, and `narrowed` re-asserts it: {h:?}"),
 		}?;
@@ -3556,7 +3657,7 @@ impl<T: Glance> Glance for Hist<'_, T> {
 
 /// The walk is over `fresh`, as every per-element kernel's is; the reach behind it is reached
 /// through the lagged readings rather than by walking further.
-impl<T: Flat + Stamped> Lagged for Hist<'_, T> {
+impl<T: Flat + Timed> Lagged for Hist<'_, T> {
 	type Elem = T;
 
 	fn count(self) -> usize {
@@ -3653,7 +3754,11 @@ where
 					_ => false,
 				},
 				"a buffer retains a bounded reach: Horizon::Elems(k >= 1) or Horizon::Over(tf > 0)"
-			)
+			);
+			assert!(
+				<C::Batch as Batch<C::Item>>::SPANS || !matches!(H, Horizon::Over(_)),
+				"an `Over` reach over a series whose items carry no time: nothing locates a span in it — retain it by count, `Elems<N>`"
+			);
 		}
 		self.batch.advance(fresh, H);
 		self.batch.view(H)
@@ -3674,7 +3779,6 @@ where
 	/// Forwarded, for the same reason [`Folding`]'s is: the graph predicates match dep names against
 	/// frame cell names, and a wrapper that renamed its dep would drop out of every one of them.
 	/// `REACH`/`FOLDED` are what then say it is the retention and not the cell itself being asked for.
-	const CLOCK: Option<Timeframe> = C::CLOCK;
 	const NAME: &'static str = C::NAME;
 	const REACH: Horizon = R::HORIZON;
 	const RETAINED: bool = true;
@@ -3689,6 +3793,10 @@ where
 			assert!(!matches!(R::HORIZON, Horizon::Unit), "Buffering at Unit is the bare dep C — drop the wrapper");
 			assert!(!matches!(R::HORIZON, Horizon::Unbounded), "a buffer is a bounded thing; Unbounded names no window");
 			assert!(K.serves(R::HORIZON), "the frame's Buffer<C, K> does not reach as far back as this Buffering<C, R> asks for");
+			assert!(
+				<C::Batch as Batch<C::Item>>::SPANS || !matches!(R::HORIZON, Horizon::Over(_)),
+				"an `Over` reach over a series whose items carry no time: nothing locates a span in it — retain it by count, `Elems<N>`"
+			);
 		}
 		C::Batch::narrow(self.out, R::HORIZON)
 	}
@@ -3749,7 +3857,6 @@ where
 	/// Forwarded, for the same reason [`Buffering`]'s is: the graph predicates match dep names against
 	/// frame cell names, and a wrapper that renamed its dep would drop out of every one of them. The
 	/// carry advances in its source's own sweep line, so the source is also the edge an observer draws.
-	const CLOCK: Option<Timeframe> = C::CLOCK;
 	const NAME: &'static str = C::NAME;
 	const RETAINED: bool = true;
 }
@@ -3769,7 +3876,6 @@ pub struct Folding<C: Cell, R: Reach>(core::marker::PhantomData<(C, R)>);
 impl<C: Cell, R: Reach> Cell for Folding<C, R> {
 	type Out<'t> = C::Out<'t>;
 
-	const CLOCK: Option<Timeframe> = C::CLOCK;
 	const FOLDED: bool = true;
 	/// Forwarded: `Roots::required_events` matches dep names against frame cell names, and a wrapper
 	/// that renamed its dep would drop out of it.
@@ -3812,7 +3918,6 @@ impl<C: Gate> Cell for Gating<C> {
 
 	/// Forwarded, for the same reason [`Folding`]'s is: the graph predicates match dep names against
 	/// frame cell names, and a wrapper that renamed its dep would drop out of every one of them.
-	const CLOCK: Option<Timeframe> = C::CLOCK;
 	const NAME: &'static str = C::NAME;
 
 	fn opens(out: <Self as Cell>::Out<'_>) -> bool {
@@ -3835,7 +3940,6 @@ impl DepSet for () {
 	type Outs<'t> = ();
 	type Reads<'t> = ();
 
-	const CLOCKS: &'static [Option<Timeframe>] = &[];
 	const FOLDS: &'static [bool] = &[];
 	const GATES: &'static [bool] = &[];
 	const NAMES: &'static [&'static str] = &[];
@@ -3892,15 +3996,14 @@ macro_rules! impl_arity {
 		impl_arity!($Th $Ih $vh $sh $(, $T $I $v $s)*);
 		impl_arity!(@all $($T $I $v $s),*);
 	};
-	// the head is split out because two things read it and nothing else: [`DepSet::Lead`] (only the
-	// leading dep can gate) and [`DepFlat::lead_fires`] (only the leading dep drives).
+	// the head is split out because [`DepSet::Lead`] reads it and nothing else: only the leading dep
+	// can gate.
 	($Th:ident $Ih:ident $vh:ident $sh:ident $(, $T:ident $I:ident $v:ident $s:ident)*) => {
 		impl<$Th: Cell $(, $T: Cell)*> DepSet for ($Th, $($T,)*) {
 			type Outs<'t> = ($Th::Out<'t>, $($T::Out<'t>,)*);
 			type Reads<'t> = reads_ty!('t; $Th $(, $T)*);
 			type Lead = <$Th as Cell>::Gates;
 
-			const CLOCKS: &'static [Option<Timeframe>] = &[$Th::CLOCK $(, $T::CLOCK)*];
 			const FOLDS: &'static [bool] = &[$Th::FOLDED $(, $T::FOLDED)*];
 			const GATES: &'static [bool] = &[<$Th::Gates as Bit>::VALUE $(, <$T::Gates as Bit>::VALUE)*];
 			const NAMES: &'static [&'static str] = &[$Th::NAME $(, $T::NAME)*];
@@ -3992,8 +4095,16 @@ macro_rules! impl_arity {
 			}
 
 			fn lead_fires(outs: &Self::Outs<'_>) -> usize {
-				let ($vh, ..) = outs;
-				$vh.fires()
+				let ($vh, $($v,)*) = outs;
+				if !<$Th::Gates as Bit>::VALUE {
+					return $vh.fires();
+				}
+				$(
+					if !<$T::Gates as Bit>::VALUE {
+						return $v.fires();
+					}
+				)*
+				panic!("a per-element kernel walks its leading data dep, and this node reads none")
 			}
 		}
 	};
@@ -4068,7 +4179,7 @@ pub struct Fire<'a> {
 	pub glance: &'a dyn Glance,
 	pub dims: &'static [usize],
 	pub plots: &'static [Plot],
-	/// The node's [`Cell::CLOCK`] — the period one of its elements *covers*, which is what a viz needs
+	/// The node's effective clock ([`Rate`]) — the period one of its elements *covers*, which is what a viz needs
 	/// to draw a slower series at its own width instead of the chart's.
 	pub clock: Option<Timeframe>,
 	/// Whether the sweep advanced the node at all. What [`fires`](Self::fires) cannot say: a clocked
@@ -4542,12 +4653,16 @@ impl<N: Node> Rewound<N> for Awake {
 
 /// [`step`] + [`Observer::on`] before the push. The `()` observer erases to exactly `step`.
 ///
+/// `clock` is the node's effective one, which only the graph holding it can derive — see [`Rate`]. A
+/// thunk, because it is a const of that graph: read only when observed, and never a value moved on
+/// the unobserved path.
+///
 /// Under an active observer, each fired node's Jacobian comes from its [`Kernel`]: a [`Pure`]
 /// node differentiates its body, a [`Blind`] one is finite-differenced — clone the pre-advance node,
 /// [`Nudge`] the *last* element of one dep (batch deps copied into scratch), re-advance the clone at
 /// a shorter lifetime, diff the last out elements.
 #[cfg_attr(feature = "profile", inline(never))]
-pub fn step_obs<'t, N, F, I, O: Observer>(frame: F, node: &'t mut N, sweep: &mut Sweep, obs: &mut O) -> Cons<'t, N, F>
+pub fn step_obs<'t, N, F, I, O: Observer>(frame: F, node: &'t mut N, clock: impl FnOnce() -> Option<Timeframe>, sweep: &mut Sweep, obs: &mut O) -> Cons<'t, N, F>
 where
 	N: Node<Kernel: Kernel<N, Host = N>>,
 	N::Deps: Pull<'t, F, I> + DepFlat,
@@ -4562,7 +4677,7 @@ where
 		)
 	}
 	let ran = <N::Deps as Pull<'t, F, I>>::open(&frame);
-	step_seen::<N, N::Kernel, _, _, _>(frame, node, ran, true, <N::Out<'t> as Dark<<N::Deps as DepSet>::Lead>>::dark, N::PLOTS, sweep, obs)
+	step_seen::<N, N::Kernel, _, _, _>(frame, node, ran, true, <N::Out<'t> as Dark<<N::Deps as DepSet>::Lead>>::dark, N::PLOTS, clock, sweep, obs)
 }
 
 /// [`step_obs`] for a node the graph derived no standing demand for: it advances only while every
@@ -4571,7 +4686,7 @@ where
 /// obligation `graph!` puts on a node it suppresses.
 #[doc(hidden)]
 #[cfg_attr(feature = "profile", inline(never))]
-pub fn step_when_obs<'t, N, F, I, O: Observer>(frame: F, node: &'t mut N, demanded: bool, sweep: &mut Sweep, obs: &mut O) -> Cons<'t, N, F>
+pub fn step_when_obs<'t, N, F, I, O: Observer>(frame: F, node: &'t mut N, demanded: bool, clock: impl FnOnce() -> Option<Timeframe>, sweep: &mut Sweep, obs: &mut O) -> Cons<'t, N, F>
 where
 	N: Node<Kernel: Kernel<N, Host = N>>,
 	N::Deps: Pull<'t, F, I> + DepFlat,
@@ -4586,7 +4701,7 @@ where
 		)
 	}
 	let ran = demanded && <N::Deps as Pull<'t, F, I>>::open(&frame);
-	step_seen::<N, N::Kernel, _, _, _>(frame, node, ran, true, <N::Out<'t> as Latent>::latent, N::PLOTS, sweep, obs)
+	step_seen::<N, N::Kernel, _, _, _>(frame, node, ran, true, <N::Out<'t> as Latent>::latent, N::PLOTS, clock, sweep, obs)
 }
 
 /// The observed sweep of one node, whatever shape it is: given whether it ran, whether its clock
@@ -4612,6 +4727,7 @@ fn step_seen<'t, N, K, F, I, O: Observer>(
 	admits: bool,
 	unrun: impl FnOnce() -> N::Out<'t>,
 	plots: &'static [Plot],
+	clock: impl FnOnce() -> Option<Timeframe>,
 	sweep: &mut Sweep,
 	obs: &mut O,
 ) -> Cons<'t, N, F>
@@ -4635,7 +4751,7 @@ where
 	if !ran || !admits {
 		let out: N::Out<'t> = unrun();
 		if want != Want::Nothing {
-			let fire = Fire::of(&out, plots, <N as Cell>::CLOCK, K::FIDELITY, <N::Deps as DepFlat>::DIMS, ran, None);
+			let fire = Fire::of(&out, plots, clock(), K::FIDELITY, <N::Deps as DepFlat>::DIMS, ran, None);
 			obs.on(N::NAME, <N::Deps as DepSet>::NAMES, <N::Deps as DepSet>::GATES, fire);
 		}
 		return Cons { out, tail: frame };
@@ -4699,7 +4815,7 @@ where
 		formula: formula.map(|f| f as &dyn core::fmt::Display),
 		deriv: deriv.as_ref().map(|d| d as &dyn core::fmt::Display),
 		trace: trace.as_ref().map(|t| t as &dyn core::fmt::Display),
-		..Fire::of(&out, plots, <N as Cell>::CLOCK, K::FIDELITY, <N::Deps as DepFlat>::DIMS, true, Some(flat))
+		..Fire::of(&out, plots, clock(), K::FIDELITY, <N::Deps as DepFlat>::DIMS, true, Some(flat))
 	};
 	obs.on(N::NAME, <N::Deps as DepSet>::NAMES, <N::Deps as DepSet>::GATES, fire);
 	Cons { out, tail: frame }
@@ -4736,7 +4852,15 @@ where
 /// buffer standing in for the node's out. A gate-closed, undemanded or off-clock emit node is simply
 /// the empty run, which is why this one needs no [`Latent`] sibling the way [`step_when_obs`] is one.
 #[cfg_attr(feature = "profile", inline(never))]
-pub fn step_emit_obs<'t, E, F, I, O: Observer>(frame: F, e: &'t mut Emitter<E>, demanded: bool, ts: i64, sweep: &mut Sweep, obs: &mut O) -> Cons<'t, E, F>
+pub fn step_emit_obs<'t, E, F, I, O: Observer>(
+	frame: F,
+	e: &'t mut Emitter<E>,
+	demanded: bool,
+	ts: i64,
+	clock: impl FnOnce() -> Option<Timeframe>,
+	sweep: &mut Sweep,
+	obs: &mut O,
+) -> Cons<'t, E, F>
 where
 	E: Emit<Kernel: Kernel<E, Host = Emitter<E>>>,
 	for<'x> E: Cell<Out<'x> = &'x [<E as Series>::Item]>,
@@ -4752,7 +4876,7 @@ where
 	// nothing clears the buffer here: `Emitter::lend` clears at the head of every fill, so what a dark
 	// tick leaves standing is never read — this tick publishes the empty run, and the next one that
 	// fills starts from empty either way.
-	step_seen::<E, E::Kernel, _, _, _>(frame, e, ran, admits, Latent::latent, <E as Emit>::PLOTS, sweep, obs)
+	step_seen::<E, E::Kernel, _, _, _>(frame, e, ran, admits, Latent::latent, <E as Emit>::PLOTS, clock, sweep, obs)
 }
 
 /// The per-dep simplified derivatives of a [`Pure`] node, `∂out/∂dep` one per line — the `deriv`
@@ -4798,6 +4922,9 @@ pub trait Roots {
 #[doc(hidden)]
 pub use alloc::vec::Vec as MacroVec;
 
+#[doc(hidden)]
+pub use v_utils::Timeframe as MacroTimeframe;
+
 /// One node's compile-time shape, as [`graph!`] sees it. `name`/`deps` are
 /// [`core::any::type_name`] strings: const-comparable, never persisted.
 #[doc(hidden)]
@@ -4826,24 +4953,20 @@ const fn str_eq(a: &str, b: &str) -> bool {
 	true
 }
 
-/// Whether a node clocked at `clock` can be fed by producers clocked at `deps` — every one of them
-/// a whole divisor of it. A rate is still the node's own to declare ([`Cell::CLOCK`]); this is what
-/// stops the declaration from being one the inputs cannot deliver, and it is `rates.node.whole-elements`
-/// in arithmetic: a node publishing every `tf` observes whole elements of its input only where that
+/// Whether a node clocked at `clock` can be fed by the producers `deps` indexes in `clocks` — every
+/// one of them a whole divisor of it. Over effective clocks ([`clock_of`]), so it is what stops a
+/// declaration from being one the inputs cannot deliver, and it is `rates.node.whole-elements` in
+/// arithmetic: a node publishing every `tf` observes whole elements of its input only where that
 /// input's period tiles `tf`.
-///
-/// It is also what pins a period spelled twice. `Bars<TF>` names `TF` in its type and reads
-/// `Ohlcs<TF>`/`Volumes<TF>`, so a clock of anything but `TF` is a build error rather than a bar
-/// silently published at a rate its type denies.
 #[doc(hidden)]
-pub const fn clock_divides(clock: Option<Timeframe>, deps: &[Option<Timeframe>]) -> bool {
+pub const fn clock_divides(clock: Option<Timeframe>, deps: &[usize], clocks: &[Option<Timeframe>]) -> bool {
 	let Some(tf) = clock else {
 		// unclocked is "whenever my inputs do", which every input delivers by definition.
 		return true;
 	};
 	let mut i = 0;
 	while i < deps.len() {
-		if let Some(d) = deps[i]
+		if let Some(d) = clocks[deps[i]]
 			&& (d.0 == 0 || tf.0 % d.0 != 0)
 		{
 			return false;

@@ -70,7 +70,7 @@ macro_rules! chain {
 			fn tick_obs<O: Observer>(&mut self, root: Option<f64>, obs: &mut O) -> Option<f64> {
 				let sweep = &mut self.sweep;
 				let f = Cons::<Root, Nil> { out: root, tail: Nil };
-				$(let f = step_obs(f, &mut self.$f, sweep, obs);)+
+				$(let f = step_obs(f, &mut self.$f, || None, sweep, obs);)+
 				f.head()
 			}
 		}

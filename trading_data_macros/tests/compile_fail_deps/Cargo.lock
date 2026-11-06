@@ -131,6 +131,7 @@ version = "0.0.0"
 dependencies = [
  "trading_data_dag",
  "trading_data_macros",
+ "v_utils",
 ]
 
 [[package]]

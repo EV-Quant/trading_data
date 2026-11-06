@@ -112,7 +112,6 @@ impl<const TF: Timeframe> Ohlcs<TF> {
 impl<const TF: Timeframe> Cell for Ohlcs<TF> {
 	type Out<'t> = &'t [Ohlc];
 
-	const CLOCK: Option<Timeframe> = Some(TF);
 	const NAME: &'static str = Self::TAG.as_str();
 }
 #[node]
@@ -167,7 +166,6 @@ impl<const TF: Timeframe> Volumes<TF> {
 impl<const TF: Timeframe> Cell for Volumes<TF> {
 	type Out<'t> = &'t [Volume];
 
-	const CLOCK: Option<Timeframe> = Some(TF);
 	const NAME: &'static str = Self::TAG.as_str();
 }
 #[node]
@@ -218,7 +216,6 @@ impl<const TF: Timeframe> Bars<TF> {
 impl<const TF: Timeframe> Cell for Bars<TF> {
 	type Out<'t> = &'t [Bar];
 
-	const CLOCK: Option<Timeframe> = Some(TF);
 	const NAME: &'static str = Self::TAG.as_str();
 }
 #[node]

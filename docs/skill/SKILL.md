@@ -84,8 +84,9 @@ Each is enforced, but knowing it before you write saves a rewrite.
 - **A level publishes only when it changes.** Observation only: same flattening as last tick ⇒
   `fires: 0` and `vals: None`, while the out a consumer reads off the frame stands as it always did
   (`r[outs.fired.on-change]`).
-- **A node owns its rate.** `Cell::CLOCK` is declared on the cell, never derived from or overridable
-  through `Deps`, and a clocked node sees only *closed* elements (`r[rates.node.declared]`,
+- **A node owns its rate.** A rate-changing node declares `Cell::CLOCK` on itself, never through
+  `Deps`; a `Scans`/`Folds` has its leading dep's rate and a `Closes` its `PERIOD`, by construction,
+  and the engine derives those. A clocked node sees only *closed* elements (`r[rates.node.declared]`,
   `r[rates.node.whole-elements]`).
 - **`Gating` + `Folding` on one node is a compile error.** A closed gate pulls no deps, so a reach
   the node holds can never re-warm. Move it into the frame and read it as `Buffering`.

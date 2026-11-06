@@ -156,7 +156,6 @@ always_present!(Flow);
 impl<const TF: Timeframe> Cell for Flows<TF> {
 	type Out<'t> = &'t [Flow];
 
-	const CLOCK: Option<Timeframe> = Some(TF);
 	const NAME: &'static str = Self::TAG.as_str();
 }
 #[node]

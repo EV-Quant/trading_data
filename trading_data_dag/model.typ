@@ -151,9 +151,9 @@ Five spellings, no sixth. Every structural fact about an edge is one of these.
  is a `#[node]` error naming the wrapper to write instead. `K` is the join over every read of `C` in
  the graph, so no one dep site holds what it would have to state.
 
- Every wrapper forwards `Cell::NAME = C::NAME` and `Cell::CLOCK = C::CLOCK` — the graph predicates
- match dep names against frame cell names, and a wrapper that renamed or re-rated its dep would drop
- out of all of them. REACH / FOLDED / RETAINED / Gates are what then say WHICH reading of C is being
+ Every wrapper forwards `Cell::NAME = C::NAME` — the graph predicates match dep names against frame
+ cell names, and a wrapper that renamed its dep would drop out of all of them. A wrapper carries no
+ rate: `graph!` resolves each dep to the cell it reads, and reads that cell's effective clock (§1.4). REACH / FOLDED / RETAINED / Gates are what then say WHICH reading of C is being
  asked for.
 
  `Sampling` keys its frame slot on ITSELF: the carry behind it is storage, not a cell, filled by
@@ -304,20 +304,30 @@ gateable the moment the lane became a run of rows the engine could retain for it
 ```
 
 ```
-  `Cell::CLOCK: Option<Timeframe>`  —  how often this cell publishes, stated on the cell because a
-  rate is a property of what a thing IS and of nothing it reads.
-     None      whenever its inputs do — today's behaviour, and the default.
+  A rate is DERIVED, one per node, by `graph!` — sweep order, deps resolved to the cells they read:
+     root                 `Cell::CLOCK`
+     Scans / Folds        the leading data dep's (first non-`Gating`) — one out per element walked
+     Closes               `Some(PERIOD)` — one element per period
+     every other kernel   its own `Cell::CLOCK`, declared because nothing else can say it
+  `Kernel::RATE` says which; the effective clocks are a const array the graph owns, read by
+  `clock_divides`, `Fire::clock` and `NodeShape::clock`. Wrappers carry none.
+
+  `Cell::CLOCK: Option<Timeframe>`  —  the DECLARATION, for a node whose kernel changes its rate.
+     None      whenever its inputs do.
      Some(tf)  over elements whose `tf` period has CLOSED; never re-entered while one is in
                progress, so how a period's messages were cut across its ticks is invisible.
+  A `Scans`/`Folds`/`Closes` cell declaring one is a build error: the rate is structural there.
 
-  DECLARED by the node · ENFORCED by whoever can. `Emitter::opens` withholds a tick only from a node
-  every one of whose deps is RETAINED (§1.3) — otherwise a withheld tick is a batch delivered to
-  nobody. A node reading a batch is already clocked by the element walk it runs over it
-  (`rates.folds.exactly-once`), and the engine takes the declaration and nothing else.
+  DECLARED by the node · ENFORCED by whoever can. `Emitter::opens` reads the declaration alone, and
+  withholds a tick only from a node every one of whose deps is RETAINED (§1.3) — otherwise a withheld
+  tick is a batch delivered to nobody. A rate-preserving node is already clocked by the element walk
+  it runs (`rates.folds.exactly-once`); gating it by tick time would drop the element its input closed
+  a tick late.
 
-     Ohlcs<TF>   Folding<Trades, Over<TF>>     not retained ⇒ its own boundary walk is the rate
-     Bars<TF>    (Ohlcs<TF>, Volumes<TF>)      bare deps    ⇒ publishes when its producers do
-     an indie    Sampling<C> / Buffering<C,H>  retained     ⇒ the engine opens it once per period
+     Ohlcs<TF>   Closes, PERIOD = TF               ⇒ @TF, its own boundary walk
+     Bars<TF>    Scans over (Ohlcs<TF>, Volumes<TF>) ⇒ @TF, its leading dep's
+     an indie    Sampling<C> / Buffering<C,H>      retained ⇒ declares, and the engine opens it once
+                                                     per period
 
   A `Sampling<C>` of a faster C is read as C stands at the END of the opening tick, so it includes
   C's elements past the period's close that landed in the same batch: what one period samples
@@ -325,10 +335,14 @@ gateable the moment the lane became a run of rows the engine could retain for it
   (`Buffering` + `Hist::all`); the drift is bounded by the read clock. Revisit if that bound is
   shown to move results.
 
-  `clock_divides` (§1.7) is what keeps a declaration honest: every feeding rate must tile it. That
-  also pins a period spelled twice — `Bars<TF>` names TF in its type and reads `Ohlcs<TF>`, so any
-  CLOCK but `Some(TF)` fails to build. It is the check standing in for a type-level equality Rust
-  has no way to write: `Deps = (Folding<Trades, Over<{C::TF}>>,)` wants `generic_const_exprs`.
+  `clock_divides` (§1.7) is what keeps a declaration honest: every feeding rate must tile it. A
+  per-element kernel reading several BARE runs (`Bars` over two accumulators, `Rsi<U, D>`) reads
+  element i of each as one instant, so their effective clocks must agree — both `Some` and equal, or
+  both `None`. A retained or sampled dep is a cross-rate read and is exempt.
+
+  `#[node(clocked)]` — a smoother weighting its elements by COUNT says something about time only
+  over a clocked series. `graph!` refuses one whose leading dep has no effective clock: a count-EMA
+  over raw trades is not a smoother of anything.
 ```
 
 === 1.5 Node kinds — how a cell computes
@@ -601,9 +615,10 @@ gateable the moment the lane became a run of rows the engine could retain for it
                (`r[kernels.fidelity.stated]`); `graph!` counts Partial and Opaque apart for a
                graph to pin.
   Symbolic     every dep scalar, arity ≤ MAX_VARS.
-  graph!       `distinct` node names · `cut_gated` · `deadlocked` · `clock_divides(CLOCK, CLOCKS)`
-               — a node's declared rate must be a whole multiple of every rate feeding it, else it
-               observes fractions of its inputs' elements. Item-level, so it fires for a node the
+  graph!       `distinct` node names · `cut_gated` · `deadlocked` · `clock_divides` over effective
+               clocks — a node's rate must be a whole multiple of every rate feeding it, else it
+               observes fractions of its inputs' elements · `runs_agree` · `#[node(clocked)]` ·
+               no `CLOCK` declared on a structural rate. Item-level, so it fires for a node the
                graph merely contains; a `const {}` inside a generic fn waits on monomorphization.
 ```
 
