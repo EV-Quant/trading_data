@@ -413,9 +413,11 @@ gateable the moment the lane became a run of rows the engine could retain for it
    │                        real dependence as zero, and nothing catches that.
    │
    ├── Closes: Series+Clone PERIOD · fn read(..) · fn open(Vars) · fn fold(Vars)
-   │                        · fn pending(_mut)                                 ⇒ kernel `Close`
+   │                        · fn empty(Vars) · fn pending(_mut)                ⇒ kernel `Close`
    │                        elements are PERIODS, closed by the first driving element past a
-   │                        boundary. The kernel owns the walk, the floor-to-period and the
+   │                        boundary, and EVERY period of the clock is one — a period no element
+   │                        reached is `empty` over the one before — so a count of them is a span
+   │                        of time. The kernel owns the walk, the floor-to-period and the
    │                        close time (a timestamp is not a slot, so it never could be the
    │                        body's); the body owns the numbers, as what a first element opens
    │                        with and what a further one folds in — the accumulator sitting at

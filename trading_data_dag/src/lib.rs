@@ -2463,12 +2463,13 @@ pub struct Pending {
 }
 
 /// A run-shaped node whose elements are *periods*, closed by the first driving element past a
-/// boundary. The kernel owns the walk and the close time; the body owns the numbers, as two
-/// expressions over one env — what a period's first element opens with, and what a further element
-/// folds into it.
+/// boundary. The kernel owns the walk and the close time; the body owns the numbers, as three
+/// expressions — what a period's first element opens with, what a further element folds into it,
+/// and what a period no element reached is.
 ///
-/// Rate-changing by construction: a batch spanning two boundaries emits two elements, one spanning
-/// none emits nothing, and the period still open stays in [`Pending`].
+/// One element per period of the clock, so a count of them is a span of time. Rate-changing by
+/// construction: a batch spanning two boundaries emits two elements, one spanning none emits
+/// nothing, and the period still open stays in [`Pending`].
 pub trait Closes: Series + Clone + Wired
 where
 	for<'x> Self: Cell<Out<'x> = &'x [<Self as Series>::Item]>, {
@@ -2489,6 +2490,10 @@ where
 	/// What a further element folds into it. The accumulator's own slots follow the deps' at
 	/// `DepFlat::LEN..`, so both bodies read the element at one set of indices.
 	fn fold(&self, vars: Vars) -> impl Slots;
+
+	/// What a period no element reached is, over the previous period's slots at `DepFlat::LEN..` —
+	/// the deps' own band is not a reading here, and stands NaN.
+	fn empty(&self, vars: Vars) -> impl Slots;
 
 	fn pending(&self) -> &Pending;
 	fn pending_mut(&mut self) -> &mut Pending;
@@ -2531,12 +2536,13 @@ impl Close {
 		{
 			let mut env = Env::<Blindfold>::new(&mut buf, base_w, slots_w);
 			let reads = <E::Deps as DepSet>::reads(&deps);
-			let (open, fold) = (e.open(Vars), e.fold(Vars));
+			let (open, fold, empty) = (e.open(Vars), e.fold(Vars), e.empty(Vars));
 			debug_assert_eq!(open.width(), slots_w, "a Closes body states one expression per slot of its item");
 			debug_assert_eq!(fold.width(), slots_w, "a Closes body states one expression per slot of its item");
+			debug_assert_eq!(empty.width(), slots_w, "a Closes body states one expression per slot of its item");
 			// r[impl outs.absence.typed]
 			debug_assert!(
-				!(open.maybe() || fold.maybe()) || <E::Item as Flat>::ABSENTABLE,
+				!(open.maybe() || fold.maybe() || empty.maybe()) || <E::Item as Flat>::ABSENTABLE,
 				"this body declines, and the item it fills has nowhere to say so: give it a `Reading`"
 			);
 			for i in 0..<E::Deps as DepFlat>::lead_fires(&deps) {
@@ -2553,7 +2559,20 @@ impl Close {
 					}
 					false => {
 						if p.live {
+							assert!(
+								ts_close > p.ts_close,
+								"a period never reopens: an element at {ts} lands before the open period closing at {}",
+								p.ts_close
+							);
 							out.push(<E::Item as Unflat>::unflat(p.ts_close, &p.slots[..slots_w]));
+							let mut quiet = [f64::NAN; MAX_VARS];
+							let mut at = p.ts_close + step;
+							while at < ts_close {
+								quiet[base_w..base_w + slots_w].copy_from_slice(&p.slots[..slots_w]);
+								empty.eval_slots(&quiet[..base_w + slots_w], &mut p.slots[..slots_w]);
+								out.push(<E::Item as Unflat>::unflat(at, &p.slots[..slots_w]));
+								at += step;
+							}
 						}
 						open.eval_slots(&env[..env_w], &mut slots[..slots_w]);
 					}
@@ -2604,10 +2623,13 @@ where
 		let (mut buf, mut slots) = ([0.0f64; MAX_VARS], [0.0f64; MAX_SLOTS]);
 		let mut env = Env::<Blindfold>::new(&mut buf, base_w, slots_w);
 		let reads = <E::Deps as DepSet>::reads(&deps);
-		let (open, fold) = (e.open(Vars), e.fold(Vars));
+		let (open, fold, empty) = (e.open(Vars), e.fold(Vars), e.empty(Vars));
 		// the newest element to have touched the open period, and whether it folded or opened it —
 		// which is what the element closed by the *next* boundary was last computed from.
 		let (mut newest, mut closed) = (None, None);
+		// the slots the closed period ended on, and how many empty periods followed it: the out
+		// flattens to the last of those, which reaches the closing element through each of them.
+		let mut quiet = ([0.0f64; MAX_SLOTS], 0usize);
 		for i in 0..<E::Deps as DepFlat>::lead_fires(&deps) {
 			env.rewind();
 			let Some(ts) = <E as Closes>::read(reads, i, &mut env) else { continue };
@@ -2623,6 +2645,7 @@ where
 				false => {
 					if p.live {
 						closed = newest;
+						quiet = (p.slots, ((ts_close - p.ts_close) / step - 1) as usize);
 					}
 					open.eval_slots(&cur[..env_w], &mut slots[..slots_w]);
 				}
@@ -2641,6 +2664,22 @@ where
 		match folding {
 			true => fold.grad_slots(&env[..env_w], &mut grad[..slots_w * env_w]),
 			false => open.grad_slots(&env[..env_w], &mut grad[..slots_w * env_w]),
+		}
+		let (mut acc, gaps) = quiet;
+		let quiet_w = base_w + slots_w;
+		for _ in 0..gaps {
+			let mut q = [0.0f64; MAX_VARS];
+			q[base_w..quiet_w].copy_from_slice(&acc[..slots_w]);
+			let mut step_jac = [0.0f64; MAX_SLOTS * MAX_VARS];
+			empty.grad_slots(&q[..quiet_w], &mut step_jac[..slots_w * quiet_w]);
+			let mut chained = [0.0f64; MAX_SLOTS * MAX_VARS];
+			for row in 0..slots_w {
+				for col in 0..env_w {
+					chained[row * env_w + col] = (0..slots_w).map(|s| step_jac[row * quiet_w + base_w + s] * grad[s * env_w + col]).sum();
+				}
+			}
+			grad = chained;
+			empty.eval_slots(&q[..quiet_w], &mut acc[..slots_w]);
 		}
 		Some(PerElem {
 			formulas: fold.lower_slots(),

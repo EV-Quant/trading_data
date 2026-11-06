@@ -2,7 +2,7 @@ use core::fmt;
 
 use trading_data_core::{Timestamped, Timestamps, TradeCols, Trades, Ts, Venue};
 use trading_data_dag::{
-	Cell, Closes, Dep, DepReads, Env, Folding, Glance, Ink, Item, Over, Pending, Plot, Scans, Slots, Stamped, Tag, Tail, Vars, Witness, always_present, max, min, node, slice_nudge,
+	Cell, Closes, Dep, DepReads, Env, Folding, Glance, Ink, Item, Over, Pending, Plot, Scans, Slots, Stamped, Tag, Tail, Vars, Witness, always_present, constant, max, min, node, slice_nudge,
 };
 use v_utils::Timeframe;
 
@@ -80,7 +80,7 @@ impl Timestamped for Bar {
 	}
 }
 
-// a period that closed had trades in it, so these three are absent only by not being emitted.
+// a period nothing traded in is still a price and a volume, so none of these is ever absent.
 always_present!(Ohlc, Volume, Bar);
 
 /// The trade a period accumulates. The whole of what tells one accumulator from another is its two
@@ -143,6 +143,12 @@ impl<const TF: Timeframe> Closes for Ohlcs<TF> {
 		(open, max(high, price), min(low, price), price)
 	}
 
+	/// Nothing traded, so the price stood where the last period closed.
+	fn empty(&self, v: Vars) -> impl Slots {
+		let close = v.get::<5>();
+		(close, close, close, close)
+	}
+
 	fn pending(&self) -> &Pending {
 		&self.0
 	}
@@ -182,6 +188,10 @@ impl<const TF: Timeframe> Closes for Volumes<TF> {
 
 	fn fold(&self, v: Vars) -> impl Slots {
 		v.get::<2>() + v.get::<1>()
+	}
+
+	fn empty(&self, _: Vars) -> impl Slots {
+		constant(0.0)
 	}
 
 	fn pending(&self) -> &Pending {

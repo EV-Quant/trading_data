@@ -185,6 +185,10 @@ impl<const TF: Timeframe> Closes for Flows<TF> {
 		(price, quote + side * (price * qty))
 	}
 
+	fn empty(&self, v: Vars) -> impl Slots {
+		(v.get::<2>(), constant(0.0))
+	}
+
 	fn pending(&self) -> &Pending {
 		&self.0
 	}
