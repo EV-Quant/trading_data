@@ -641,7 +641,7 @@ version = "3.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dee98b0db6a962de883bf5d20362dee4d7ca0d12fe39a7c6c73c844e1cd7c1f"
 dependencies = [
- "darling 0.20.11",
+ "darling 0.23.0",
  "ident_case",
  "prettyplease",
  "proc-macro2",
@@ -966,7 +966,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1536,7 +1536,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1630,7 +1630,7 @@ dependencies = [
  "thiserror 2.0.19",
  "tokio",
  "tracing",
- "trading_data_core",
+ "trading_data_core 0.5.2",
  "uuid",
  "v_utils",
  "zip",
@@ -1645,7 +1645,7 @@ dependencies = [
  "serde",
  "tokio",
  "tower-http 0.7.0",
- "trading_data_dag",
+ "trading_data_dag 0.5.2",
 ]
 
 [[package]]
@@ -3846,7 +3846,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4284,7 +4284,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4343,7 +4343,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4772,7 +4772,7 @@ dependencies = [
  "clap",
  "color-eyre",
  "derive-new",
- "trading_data_core",
+ "trading_data_core 0.5.2",
  "v_utils",
 ]
 
@@ -5001,7 +5001,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5450,17 +5450,17 @@ dependencies = [
 
 [[package]]
 name = "trading_data"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "insta",
  "serde",
  "serde_json",
  "syn 3.0.3",
  "tempfile",
- "trading_data_core",
- "trading_data_dag",
+ "trading_data_core 0.6.0",
+ "trading_data_dag 0.6.0",
  "trading_data_derivatives",
- "trading_data_expr",
+ "trading_data_expr 0.6.0",
  "trading_data_persistence",
  "v_utils",
 ]
@@ -5468,6 +5468,24 @@ dependencies = [
 [[package]]
 name = "trading_data_core"
 version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4dd63d4864456d94624a12a92031f9754e76ac44890df1e9daedd9a2e33c060"
+dependencies = [
+ "arrayvec",
+ "derive-new",
+ "derive_more",
+ "eyre",
+ "jiff",
+ "serde",
+ "strum",
+ "thiserror 2.0.19",
+ "trading_data_dag 0.5.2",
+ "v_utils",
+]
+
+[[package]]
+name = "trading_data_core"
+version = "0.6.0"
 dependencies = [
  "arrayvec",
  "derive-new",
@@ -5480,33 +5498,53 @@ dependencies = [
  "snapshot_fonts",
  "strum",
  "thiserror 2.0.19",
- "trading_data_dag",
+ "trading_data_dag 0.6.0",
  "v_utils",
 ]
 
 [[package]]
 name = "trading_data_dag"
 version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a58926c85852ac806a03bd44c934b62e0ff5d8ffaed6608addc77053df237f2"
+dependencies = [
+ "trading_data_expr 0.5.2",
+ "trading_data_macros 0.5.2",
+ "v_utils",
+]
+
+[[package]]
+name = "trading_data_dag"
+version = "0.6.0"
 dependencies = [
  "iai-callgrind",
  "insta",
- "trading_data_expr",
- "trading_data_macros",
+ "trading_data_expr 0.6.0",
+ "trading_data_macros 0.6.0",
  "v_utils",
 ]
 
 [[package]]
 name = "trading_data_derivatives"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
- "trading_data_core",
- "trading_data_dag",
+ "trading_data_core 0.6.0",
+ "trading_data_dag 0.6.0",
  "v_utils",
 ]
 
 [[package]]
 name = "trading_data_expr"
 version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a00233df239d6d760cd2a4a4e8fead3d946f924ebd872a6c8679b90bdbabee13"
+dependencies = [
+ "libm",
+]
+
+[[package]]
+name = "trading_data_expr"
+version = "0.6.0"
 dependencies = [
  "iai-callgrind",
  "libm",
@@ -5514,7 +5552,7 @@ dependencies = [
 
 [[package]]
 name = "trading_data_live_example"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "color-eyre",
  "exchange_interactions",
@@ -5528,20 +5566,32 @@ dependencies = [
 [[package]]
 name = "trading_data_macros"
 version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8ffa83fd42a1c87d604eb8c04267434ab2c449dec67d50b808723b598cbba19"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
+]
+
+[[package]]
+name = "trading_data_macros"
+version = "0.6.0"
 dependencies = [
  "insta",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn 3.0.3",
- "trading_data_dag",
- "trading_data_expr",
+ "trading_data_dag 0.6.0",
+ "trading_data_expr 0.6.0",
  "ui_test",
 ]
 
 [[package]]
 name = "trading_data_persistence"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "arrayvec",
  "arrow",
@@ -5551,15 +5601,15 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.19",
  "tracing",
- "trading_data_core",
- "trading_data_dag",
- "trading_data_macros",
+ "trading_data_core 0.6.0",
+ "trading_data_dag 0.6.0",
+ "trading_data_macros 0.6.0",
  "v_utils",
 ]
 
 [[package]]
 name = "trading_data_simple"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "clap",
  "exec_viz",
@@ -5573,7 +5623,7 @@ dependencies = [
 
 [[package]]
 name = "trading_data_spl"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -6060,7 +6110,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
