@@ -51,6 +51,8 @@ redundant_field_names = "allow"     # `derive_new::new` expands to `Self { f: f 
 get_first = "allow"
 get_last_with_len = "allow"
 manual_is_multiple_of = "allow"
+if_not_else = "warn"
+integer_division = "warn"
 
 [workspace.lints.rust]
 stable_features = "allow"

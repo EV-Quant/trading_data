@@ -1542,6 +1542,8 @@ dependencies = [
 [[package]]
 name = "exchange_interactions"
 version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9a01aa1cb23f5cbf516d85383d9537a17e0b9ea685b434f2894bbb1bc171d3d"
 dependencies = [
  "exchange_interactions_methods",
 ]
@@ -1549,6 +1551,8 @@ dependencies = [
 [[package]]
 name = "exchange_interactions_adapters"
 version = "0.19.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5cf7f3976a21e4c9790207d9c9b4ff1f63fd5e908d65bbf411028c2646a13ea"
 dependencies = [
  "ahash 0.8.12",
  "base64 0.23.0",
@@ -1576,6 +1580,8 @@ dependencies = [
 [[package]]
 name = "exchange_interactions_api_generics"
 version = "0.21.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0eceaeff835025001dc6521be9604f40bb8152ddacee80a33e9b13d83f3de319"
 dependencies = [
  "ahash 0.8.12",
  "arc-swap",
@@ -1606,6 +1612,8 @@ dependencies = [
 [[package]]
 name = "exchange_interactions_methods"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c564cbd3a3d8786b48fca96d0ff3a00f56722f955081527f0890e670eb742685"
 dependencies = [
  "ahash 0.8.12",
  "arrayvec",
@@ -1639,6 +1647,8 @@ dependencies = [
 [[package]]
 name = "exec_viz"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5415a292c921dd0233dcdfdcc1632d6f1cf70f8aef688f79ff60da8cb6c88c73"
 dependencies = [
  "axum",
  "rmp-serde",
