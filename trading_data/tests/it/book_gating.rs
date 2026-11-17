@@ -20,7 +20,7 @@ use book_fixture::{PERIOD, PREC, Read, anchor, read, run};
 use trading_data::{Blind, Book, BookAnchors, BookDelta, BookDeltas, BookShape, Buffering, Cell, DepOuts, Gate, Gating, Nudge, Over, Side, TradeBuf, TradeCols, Trades, Ts, node};
 use v_utils::TF_15MIN;
 
-mod book_fixture;
+use crate::book_fixture;
 
 /// `Node::Deps` is fixed on the impl, so the shipped `Book` node is the ungated one; gating it is
 /// this wrapper over the same public `Book::step` fold. The two cannot drift — and both resolve

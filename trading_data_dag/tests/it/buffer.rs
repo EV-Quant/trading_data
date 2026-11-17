@@ -386,14 +386,14 @@ mod revive {
 	}
 
 	#[derive(Clone, Default)]
-	struct Live {
+	struct BufferLive {
 		armed: bool,
 	}
-	impl Cell for Live {
+	impl Cell for BufferLive {
 		type Out<'t> = bool;
 	}
 	#[node(latch)]
-	impl Blind for Live {
+	impl Blind for BufferLive {
 		type Deps = (Trig,);
 
 		const WHY: &'static str = "a latch fixture";
@@ -403,8 +403,8 @@ mod revive {
 			self.armed
 		}
 	}
-	impl Gate for Live {}
-	impl Latch for Live {
+	impl Gate for BufferLive {}
+	impl Latch for BufferLive {
 		type Cut = Episodic;
 
 		fn commutate(&mut self) {
@@ -427,7 +427,7 @@ mod revive {
 	}
 	#[node]
 	impl Blind for Episodic {
-		type Deps = (Gating<Live>, Buffering<Src, Elems<3>>);
+		type Deps = (Gating<BufferLive>, Buffering<Src, Elems<3>>);
 
 		const WHY: &'static str = "a buffer fixture";
 
