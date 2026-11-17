@@ -15,17 +15,17 @@ use book_fixture::{PERIOD, PREC, Read, anchor, read, run};
 use trading_data::{Blind, Book, BookAnchors, BookDelta, BookDeltas, BookShape, Buffering, Cell, DepOuts, Gate, Gating, Nudge, Over, Rewound, Side, TradeBuf, TradeCols, Trades, Ts, node};
 use v_utils::TF_15MIN;
 
-mod book_fixture;
+use crate::book_fixture;
 
 /// `book_gating.rs`'s fixture, anchored: the shipped `Book` node is ungated, so gating it is this
 /// wrapper over the same public fold, and both resolve against the *same* `Buffer<BookDeltas, 15m>`
 /// as the ungated twin below.
 #[derive(Clone, Default)]
-struct GatedBook(Book);
-impl Cell for GatedBook {
+struct RewindBook(Book);
+impl Cell for RewindBook {
 	type Out<'t> = Option<&'t Book>;
 }
-impl Nudge for GatedBook {
+impl Nudge for RewindBook {
 	type Scratch = Option<Book>;
 
 	fn stage(out: Option<&Book>, s: &mut Self::Scratch, _: Option<usize>, _: f64) -> f64 {
@@ -38,8 +38,8 @@ impl Nudge for GatedBook {
 	}
 }
 #[node(anchored)]
-impl Blind for GatedBook {
-	type Deps = (Gating<Hot>, BookAnchors, Buffering<BookDeltas, Over<{ TF_15MIN }>>);
+impl Blind for RewindBook {
+	type Deps = (Gating<RewindHot>, BookAnchors, Buffering<BookDeltas, Over<{ TF_15MIN }>>);
 
 	const WHY: &'static str = "a book-rewind fixture";
 
@@ -50,12 +50,12 @@ impl Blind for GatedBook {
 
 /// Open exactly when this step carries a trade — a gate the test body drives without a second root.
 #[derive(Clone, Default)]
-struct Hot;
-impl Cell for Hot {
+struct RewindHot;
+impl Cell for RewindHot {
 	type Out<'t> = bool;
 }
 #[node]
-impl Blind for Hot {
+impl Blind for RewindHot {
 	type Deps = (Trades,);
 
 	const WHY: &'static str = "a hot-path fixture";
@@ -64,17 +64,17 @@ impl Blind for Hot {
 		!t.is_empty()
 	}
 }
-impl Gate for Hot {}
+impl Gate for RewindHot {}
 
 /// The book's only consumer, behind the same gate.
 #[derive(Clone, Copy, Default)]
-struct Mid;
-impl Cell for Mid {
+struct RewindMid;
+impl Cell for RewindMid {
 	type Out<'t> = Option<f64>;
 }
 #[node]
-impl Blind for Mid {
-	type Deps = (Gating<Hot>, GatedBook);
+impl Blind for RewindMid {
+	type Deps = (Gating<RewindHot>, RewindBook);
 
 	const WHY: &'static str = "a borrowed-root fixture";
 
@@ -90,7 +90,7 @@ trading_data::graph! {
 	batches Batches;
 	roots { trades: Trades[TradeCols], deltas: BookDeltas[BookDelta], anchors: BookAnchors[BookShape] };
 	out GOut;
-	outputs { mid: Mid, book: GatedBook, twin: trading_data::Book }
+	outputs { mid: RewindMid, book: RewindBook, twin: trading_data::Book }
 }
 
 /// The test's stand-in for `trading_data::Past`: what the driver has already handed the graph, and
@@ -129,8 +129,8 @@ impl Tape {
 	}
 }
 
-impl Rewound<GatedBook> for Tape {
-	fn rewind(&mut self, n: &mut GatedBook) {
+impl Rewound<RewindBook> for Tape {
+	fn rewind(&mut self, n: &mut RewindBook) {
 		self.resume(&mut n.0);
 	}
 }
@@ -226,7 +226,7 @@ fn under_awake_the_node_is_pinned_and_folds_every_row() {
 		g.tick(0, batch(&mut trades, false, None, &d));
 	}
 
-	// its own `Gating<Hot>` still darkened it, and no past means no seek: the sleep outran the two
+	// its own `Gating<RewindHot>` still darkened it, and no past means no seek: the sleep outran the two
 	// nets, so the book declines rather than fold onto stale state.
 	let woke = run(3 * PERIOD + 200, &[(6, Side::Sell, 10_003, 8)]);
 	let out = g.tick(0, batch(&mut trades, true, None, &woke));

@@ -10,6 +10,7 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 include = ["src/**/*"]
+autotests = false
 
 [features]
 # `#[inline(never)]` on every `step*`, so a profiler resolves one frame per node. Never in a
@@ -38,6 +39,15 @@ harness = false
 [[bench]]
 name = "buffer_cost"
 harness = false
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+# defines the `Deprec` and `Ticks` nodes `it::latch` defines too, and node shims are crate-global `macro_export`s
+[[test]]
+name = "internal_latch"
+path = "tests/internal_latch.rs"
 
 [lints]
 workspace = true

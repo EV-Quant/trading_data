@@ -11,6 +11,7 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 include = ["src/**/*"]
+autotests = false
 
 # Forwarded, not re-invented: an example depends on this facade only, and the switch it needs is the
 # engine's. Off by default here too — an implementor who never asks cannot acquire it by accident.
@@ -45,8 +46,12 @@ tempfile.workspace = true
 # published facade's feature set.
 v_utils = { workspace = true, features = ["fuzz"] }
 
-# One integration binary, per matklad's "delete cargo integration tests": every fuzz target shares one
-# FRNG kernel, one corpus and one driver, and a target is a line in its registry.
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+# Its own binary: every fuzz target shares one FRNG kernel, one corpus and one driver, and the corpus
+# is versioned by hashes of this directory's source text.
 [[test]]
 name = "fuzz"
 path = "tests/fuzz/main.rs"

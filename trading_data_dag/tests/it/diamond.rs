@@ -267,17 +267,17 @@ fn fd_linear_dep() {
 	assert!((jac[0] - 2.0).abs() < 1e-3, "{jac:?}");
 }
 
-struct Level;
-impl Cell for Level {
+struct DiamondLevel;
+impl Cell for DiamondLevel {
 	type Out<'t> = f64;
 }
-impl Clone for Level {
+impl Clone for DiamondLevel {
 	fn clone(&self) -> Self {
-		Level
+		DiamondLevel
 	}
 }
 #[node]
-impl Blind for Level {
+impl Blind for DiamondLevel {
 	type Deps = (Trades, Quotes);
 
 	const WHY: &'static str = "a retention fixture";
@@ -294,7 +294,7 @@ fn fd_unfired_dep_nan_column() {
 	let mut rec = JacRec::default();
 	let f = Cons::<Trades, Nil> { out: None, tail: Nil };
 	let f = Cons::<Quotes, _> { out: Some(5.0), tail: f };
-	step_obs(f, &mut Level, || None, &mut Sweep::default(), &mut rec);
+	step_obs(f, &mut DiamondLevel, || None, &mut Sweep::default(), &mut rec);
 	let jac = rec.0[0].as_ref().expect("Level always fires");
 	assert!(jac[0].is_nan(), "{jac:?}");
 	assert!((jac[1] - 3.0).abs() < 1e-3, "{jac:?}");
@@ -416,7 +416,7 @@ fn a_level_fires_only_where_its_value_moved() {
 		}
 	}
 
-	let (mut seen, mut sweep, mut level) = (Fires::default(), Sweep::default(), Level);
+	let (mut seen, mut sweep, mut level) = (Fires::default(), Sweep::default(), DiamondLevel);
 	for q in [1.0, 1.0, 2.0, 2.0, 1.0] {
 		sweep.restart();
 		let f = Cons::<Trades, Nil> { out: None, tail: Nil };
